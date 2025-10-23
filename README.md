@@ -1,135 +1,132 @@
-# Turborepo starter
+# Chat AI Platform
 
-This Turborepo starter is maintained by the Turborepo core team.
+A modern real-time chat application built with Next.js (React + TypeScript), NestJS, Prisma, PostgreSQL, and Socket.IO, organized in a Turborepo monorepo.
 
-## Using this example
+---
 
-Run the following command:
+## Tech Stack
 
-```sh
-npx create-turbo@latest
-```
+- Frontend: Next.js (React + TypeScript)
+- Backend: NestJS + Prisma ORM
+- Database: PostgreSQL (Docker)
+- Realtime: WebSockets (Socket.IO)
+- Monorepo: Turborepo (pnpm workspaces)
 
-## What's inside?
+---
 
-This Turborepo includes the following packages/apps:
+## Project Structure
 
-### Apps and Packages
+apps/
+├─ api/ → NestJS backend (REST + WebSocket)
+└─ web/ → Next.js frontend UI
 
-- `docs`: a [Next.js](https://nextjs.org/) app
-- `web`: another [Next.js](https://nextjs.org/) app
-- `@repo/ui`: a stub React component library shared by both `web` and `docs` applications
-- `@repo/eslint-config`: `eslint` configurations (includes `eslint-config-next` and `eslint-config-prettier`)
-- `@repo/typescript-config`: `tsconfig.json`s used throughout the monorepo
+---
 
-Each package/app is 100% [TypeScript](https://www.typescriptlang.org/).
+## Prerequisites
 
-### Utilities
+- Node.js 18+ (recommended 20+)
+- pnpm (via Corepack or manual install)
+- Docker Desktop (for PostgreSQL)
 
-This Turborepo has some additional tools already setup for you:
+---
 
-- [TypeScript](https://www.typescriptlang.org/) for static type checking
-- [ESLint](https://eslint.org/) for code linting
-- [Prettier](https://prettier.io) for code formatting
+## Quick Start
 
-### Build
+1. Clone & install
 
-To build all apps and packages, run the following command:
+   git clone https://github.com/<your-username>/chat-ai-platform.git
+   cd chat-ai-platform
+   pnpm install
 
-```
-cd my-turborepo
+2. Environment variables
 
-# With [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation) installed (recommended)
-turbo build
+   Create a `.env` file at the **repo root** based on these values:
 
-# Without [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation), use your package manager
-npx turbo build
-yarn dlx turbo build
-pnpm exec turbo build
-```
+   DATABASE_URL="postgresql://postgres:postgres@localhost:5432/chat"
+   JWT_SECRET="dev-secret-change-me"
+   NEXT_PUBLIC_API_BASE="http://localhost:3000"
 
-You can build a specific package by using a [filter](https://turborepo.com/docs/crafting-your-repository/running-tasks#using-filters):
+   Tip: Commit a safe `.env.example` with the same keys and dummy values.
 
-```
-# With [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation) installed (recommended)
-turbo build --filter=docs
+3. Start the database (Docker)
 
-# Without [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation), use your package manager
-npx turbo build --filter=docs
-yarn exec turbo build --filter=docs
-pnpm exec turbo build --filter=docs
-```
+   docker-compose up -d
 
-### Develop
+   The database will listen on port 5432.
 
-To develop all apps and packages, run the following command:
+4. Start the backend (NestJS, port 3000)
 
-```
-cd my-turborepo
+   pnpm -F api start:dev
 
-# With [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation) installed (recommended)
-turbo dev
+   API base URL: http://localhost:3000
 
-# Without [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation), use your package manager
-npx turbo dev
-yarn exec turbo dev
-pnpm exec turbo dev
-```
+5. Start the frontend (Next.js, port 3001)
 
-You can develop a specific package by using a [filter](https://turborepo.com/docs/crafting-your-repository/running-tasks#using-filters):
+   pnpm -F web dev -- --port 3001
 
-```
-# With [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation) installed (recommended)
-turbo dev --filter=web
+   Frontend URL: http://localhost:3001
+   Ensure the frontend env points at the API:
+   NEXT_PUBLIC_API_BASE=http://localhost:3000
 
-# Without [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation), use your package manager
-npx turbo dev --filter=web
-yarn exec turbo dev --filter=web
-pnpm exec turbo dev --filter=web
-```
+---
 
-### Remote Caching
+## Features
 
-> [!TIP]
-> Vercel Remote Cache is free for all plans. Get started today at [vercel.com](https://vercel.com/signup?/signup?utm_source=remote-cache-sdk&utm_campaign=free_remote_cache).
+- JWT authentication (login, register, refresh)
+- Real-time messaging via Socket.IO
+- Channel creation and listing
+- Typing indicators
+- Auto-scroll and live updates
+- Clean separation of frontend and backend in a monorepo
 
-Turborepo can use a technique known as [Remote Caching](https://turborepo.com/docs/core-concepts/remote-caching) to share cache artifacts across machines, enabling you to share build caches with your team and CI/CD pipelines.
+---
 
-By default, Turborepo will cache locally. To enable Remote Caching you will need an account with Vercel. If you don't have an account you can [create one](https://vercel.com/signup?utm_source=turborepo-examples), then enter the following commands:
+## Useful Commands
 
-```
-cd my-turborepo
+- Run all apps with Turbo:
+  pnpm run dev
 
-# With [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation) installed (recommended)
-turbo login
+- Backend only:
+  pnpm -F api start:dev
 
-# Without [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation), use your package manager
-npx turbo login
-yarn exec turbo login
-pnpm exec turbo login
-```
+- Frontend only (fixed port 3001):
+  pnpm -F web dev -- --port 3001
 
-This will authenticate the Turborepo CLI with your [Vercel account](https://vercel.com/docs/concepts/personal-accounts/overview).
+- Start database:
+  docker-compose up -d
 
-Next, you can link your Turborepo to your Remote Cache by running the following command from the root of your Turborepo:
+- Stop database/containers:
+  docker-compose down
 
-```
-# With [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation) installed (recommended)
-turbo link
+---
 
-# Without [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation), use your package manager
-npx turbo link
-yarn exec turbo link
-pnpm exec turbo link
-```
+## Docker Compose (included in repo)
 
-## Useful Links
+version: "3.9"
+services:
+db:
+image: postgres:15
+restart: always
+environment:
+POSTGRES_USER: postgres
+POSTGRES_PASSWORD: postgres
+POSTGRES_DB: chat
+ports: - "5432:5432"
+volumes: - pgdata:/var/lib/postgresql/data
 
-Learn more about the power of Turborepo:
+volumes:
+pgdata:
 
-- [Tasks](https://turborepo.com/docs/crafting-your-repository/running-tasks)
-- [Caching](https://turborepo.com/docs/crafting-your-repository/caching)
-- [Remote Caching](https://turborepo.com/docs/core-concepts/remote-caching)
-- [Filtering](https://turborepo.com/docs/crafting-your-repository/running-tasks#using-filters)
-- [Configuration Options](https://turborepo.com/docs/reference/configuration)
-- [CLI Usage](https://turborepo.com/docs/reference/command-line-reference)
+---
+
+## Notes
+
+- The backend uses a JwtStrategy to validate Bearer tokens on protected routes and socket connections.
+- Prisma manages the schema and migrations; models include User, Channel, and Message.
+- The frontend stores the access token in localStorage and attaches it to requests; an Axios interceptor clears invalid tokens.
+
+---
+
+## License
+
+MIT © 2025 <Joachim Tramper>
