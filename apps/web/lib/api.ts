@@ -13,6 +13,7 @@ export function setToken(token: string | null) {
   else localStorage.removeItem(TOKEN_KEY);
   api.defaults.headers.common.Authorization = token ? `Bearer ${token}` : "";
 
+  // update socket auth
   refreshSocketAuth(token);
 }
 
@@ -37,7 +38,7 @@ api.interceptors.response.use(
   }
 );
 
-// ---- Auth
+// ---- Auth ----
 export async function register(
   email: string,
   password: string,
@@ -51,11 +52,13 @@ export async function register(
   setToken(data.accessToken);
   return data;
 }
+
 export async function login(email: string, password: string) {
   const { data } = await api.post("/auth/login", { email, password });
   setToken(data.accessToken);
   return data;
 }
+
 export async function me() {
   const { data } = await api.get("/auth/me");
   return data as { sub: string; email: string; displayName: string };
@@ -65,15 +68,17 @@ export function logout() {
   setToken(null);
 }
 
-// ---- Channels & Messages
+// ---- Channels & Messages ----
 export async function listChannels() {
   const { data } = await api.get("/channels");
   return data as Array<{ id: string; name: string }>;
 }
+
 export async function createChannel(name: string) {
   const { data } = await api.post("/channels", { name });
   return data as { id: string; name: string };
 }
+
 export async function listMessages(channelId: string) {
   const { data } = await api.get(`/channels/${channelId}/messages`);
   return data as Array<{
@@ -84,9 +89,30 @@ export async function listMessages(channelId: string) {
     author: { id: string; displayName: string };
   }>;
 }
+
 export async function sendMessage(channelId: string, content?: string) {
   const { data } = await api.post(`/channels/${channelId}/messages`, {
     content,
   });
   return data;
+}
+
+// ---- Direct Messages ----
+export async function listDirectChannels() {
+  const { data } = await api.get("/channels/direct");
+  return data as Array<{
+    id: string;
+    name: string;
+    isDirect: boolean;
+    members: { id: string; displayName: string }[];
+  }>;
+}
+
+export async function getOrCreateDirectChannel(userId: string) {
+  const { data } = await api.get(`/channels/direct/${userId}`);
+  return data as {
+    id: string;
+    name: string;
+    members: { id: string; displayName: string }[];
+  };
 }

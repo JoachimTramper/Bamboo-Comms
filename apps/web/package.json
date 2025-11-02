@@ -4,9 +4,9 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "dev": "next dev --turbopack --port 3000",
+    "dev": "next dev --turbopack --port 3001",
     "build": "next build",
-    "start": "next start",
+    "start": "next start -p 3001",
     "lint": "next lint --max-warnings 0",
     "check-types": "tsc --noEmit"
   },
@@ -14,6 +14,7 @@
     "@repo/ui": "workspace:*",
     "axios": "^1.12.2",
     "jotai": "^2.15.0",
+    "lucide-react": "^0.548.0",
     "next": "^15.5.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",

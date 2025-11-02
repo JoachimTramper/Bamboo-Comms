@@ -29,23 +29,31 @@ export class WsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private async getUserSafe(userId: string) {
     return this.prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, displayName: true },
+      select: { id: true, displayName: true, lastSeen: true },
     });
   }
 
   private async sendPresenceSnapshot(to: Socket) {
-    // send list of online users
+    // wie is online (>=1 socket)
     const onlineUserIds = [...this.userToSockets.entries()]
       .filter(([_, sockets]) => sockets.size > 0)
       .map(([userId]) => userId);
 
-    // include displayNames
-    const users = await this.prisma.user.findMany({
+    const online = await this.prisma.user.findMany({
       where: { id: { in: onlineUserIds } },
-      select: { id: true, displayName: true },
+      select: { id: true, displayName: true, lastSeen: true },
+      orderBy: { displayName: 'asc' },
     });
 
-    to.emit('presence.snapshot', { online: users });
+    // recent offline users (niet online, wel lastSeen), meest recent eerst
+    const recently = await this.prisma.user.findMany({
+      where: { id: { notIn: onlineUserIds }, lastSeen: { not: null } },
+      select: { id: true, displayName: true, lastSeen: true },
+      orderBy: { lastSeen: 'desc' },
+      take: 20, // pak er bv. 20
+    });
+
+    to.emit('presence.snapshot', { online, recently });
   }
 
   private async broadcastPresenceUpdate(userId: string, isOnline: boolean) {
@@ -66,9 +74,10 @@ export class WsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       const payload = this.jwt.verify(token, {
         secret: process.env.JWT_SECRET!,
       }) as JwtPayload;
+
       (client as any).user = payload;
 
-      // presence: track socket
+      // track socket
       const userId = payload.sub;
       this.socketToUser.set(client.id, { userId });
 
@@ -77,10 +86,10 @@ export class WsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       set.add(client.id);
       this.userToSockets.set(userId, set);
 
-      // send snapshot to this client
+      // snapshot to client
       await this.sendPresenceSnapshot(client);
 
-      // if user just came online (first socket), broadcast update
+      // just came online? broadcast
       if (wasOffline) {
         await this.broadcastPresenceUpdate(userId, true);
       }
@@ -97,15 +106,24 @@ export class WsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.socketToUser.delete(client.id);
 
     const set = this.userToSockets.get(userId);
-    if (set) {
-      set.delete(client.id);
-      if (set.size === 0) {
-        this.userToSockets.delete(userId);
-        // user is now fully offline
-        await this.broadcastPresenceUpdate(userId, false);
-      } else {
-        this.userToSockets.set(userId, set);
+    if (!set) return;
+
+    set.delete(client.id);
+
+    if (set.size === 0) {
+      // fully offline -> update lastSeen
+      this.userToSockets.delete(userId);
+      try {
+        await this.prisma.user.update({
+          where: { id: userId },
+          data: { lastSeen: new Date() },
+        });
+      } catch (e) {
+        console.warn('[presence] failed to update lastSeen', e);
       }
+      await this.broadcastPresenceUpdate(userId, false);
+    } else {
+      this.userToSockets.set(userId, set);
     }
   }
 
