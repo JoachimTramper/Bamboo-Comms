@@ -5,13 +5,17 @@ import {
   Get,
   Param,
   Post,
+  Patch,
+  Delete,
   Query,
   UseGuards,
+  HttpCode,
 } from '@nestjs/common';
 import { MessagesService } from './messages.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { User } from '../auth/decorators/user.decorator';
 import { CreateMessageDto } from './dto/create-message.dto';
+import { UpdateMessageDto } from './dto/update-message.dto';
 
 @Controller('channels/:id/messages')
 @UseGuards(JwtAuthGuard)
@@ -20,20 +24,43 @@ export class MessagesController {
 
   @Get()
   list(
-    @Param('id') id: string,
+    @Param('id') channelId: string,
     @Query('take') take?: string,
     @Query('cursor') cursor?: string,
   ) {
     const n = take ? Number(take) : 50;
-    return this.svc.list(id, Number.isFinite(n) ? n : 50, cursor);
+    return this.svc.list(channelId, Number.isFinite(n) ? n : 50, cursor);
   }
 
   @Post()
   create(
-    @Param('id') id: string,
-    @Body() dto: CreateMessageDto, // ⬅️ alleen { content?: string }
-    @User() user: { sub: string; email: string }, // ⬅️ uit JWT
+    @Param('id') channelId: string,
+    @Body() dto: CreateMessageDto, // { content?: string }
+    @User() user: { sub: string; email: string }, // from JWT
   ) {
-    return this.svc.create(id, user.sub, dto.content);
+    return this.svc.create(channelId, user.sub, dto.content);
+  }
+
+  // EDIT message
+  @Patch(':messageId')
+  update(
+    @Param('id') _channelId: string,
+    @Param('messageId') messageId: string,
+    @Body() dto: UpdateMessageDto, // { content?: string }
+    @User() user: { sub: string; email: string },
+  ) {
+    return this.svc.update(messageId, user.sub, dto.content ?? '');
+  }
+
+  // SOFT-DELETE message
+  @Delete(':messageId')
+  @HttpCode(204)
+  async remove(
+    @Param('id') _channelId: string, // optional
+    @Param('messageId') messageId: string,
+    @User() user: { sub: string; email: string },
+  ) {
+    await this.svc.softDelete(messageId, user.sub);
+    // 204 No Content
   }
 }

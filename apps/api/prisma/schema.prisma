@@ -7,18 +7,24 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum Role {
+  USER
+  ADMIN
+}
+
 model User {
-  id           String    @id @default(cuid())
-  email        String    @unique
+  id           String        @id @default(cuid())
+  email        String        @unique
   passwordHash String
   displayName  String
-  createdAt    DateTime  @default(now())
+  role         Role          @default(USER)
+  createdAt    DateTime      @default(now())
   messages     Message[]
   lastSeen     DateTime?
-  channels     Channel[] @relation("ChannelMembers")
+  channels     Channel[]     @relation("ChannelMembers")
+  reads        ChannelRead[]
 
-  // ← back-relation naar ChannelRead
-  reads ChannelRead[]
+  deletedMessages Message[] @relation("MessageDeletedBy")
 }
 
 model Channel {
@@ -30,20 +36,25 @@ model Channel {
   members   User[]    @relation("ChannelMembers")
   dmKey     String?   @unique
 
-  // ← back-relation naar ChannelRead
   reads ChannelRead[]
 }
 
 model Message {
-  id        String   @id @default(cuid())
-  content   String?
-  authorId  String
-  channelId String
-  createdAt DateTime @default(now())
-  author    User     @relation(fields: [authorId], references: [id])
-  channel   Channel  @relation(fields: [channelId], references: [id])
+  id          String    @id @default(cuid())
+  content     String?
+  authorId    String
+  channelId   String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+  deletedById String?
+
+  author    User    @relation(fields: [authorId], references: [id])
+  channel   Channel @relation(fields: [channelId], references: [id])
+  deletedBy User?   @relation("MessageDeletedBy", fields: [deletedById], references: [id])
 
   @@index([channelId, createdAt(sort: Desc)])
+  @@index([channelId, deletedAt])
 }
 
 model ChannelRead {

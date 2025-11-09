@@ -34,7 +34,7 @@ export class WsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   private async sendPresenceSnapshot(to: Socket) {
-    // wie is online (>=1 socket)
+    // who is online (>=1 socket)
     const onlineUserIds = [...this.userToSockets.entries()]
       .filter(([_, sockets]) => sockets.size > 0)
       .map(([userId]) => userId);
@@ -45,12 +45,12 @@ export class WsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       orderBy: { displayName: 'asc' },
     });
 
-    // recent offline users (niet online, wel lastSeen), meest recent eerst
+    // recent offline users (not online, but lastSeen), most recent first
     const recently = await this.prisma.user.findMany({
       where: { id: { notIn: onlineUserIds }, lastSeen: { not: null } },
       select: { id: true, displayName: true, lastSeen: true },
       orderBy: { lastSeen: 'desc' },
-      take: 20, // pak er bv. 20
+      take: 20,
     });
 
     to.emit('presence.snapshot', { online, recently });

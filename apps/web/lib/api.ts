@@ -1,3 +1,4 @@
+// lib/api.ts
 import axios from "axios";
 import { refreshSocketAuth } from "@/lib/socket";
 
@@ -6,41 +7,48 @@ const api = axios.create({
 });
 
 const TOKEN_KEY = "accessToken";
+let CURRENT_TOKEN: string | null = null; // per-tab in-memory cache
 
-// Helpers
+// ---- Token helpers ----
 export function setToken(token: string | null) {
-  if (token) localStorage.setItem(TOKEN_KEY, token);
-  else localStorage.removeItem(TOKEN_KEY);
+  CURRENT_TOKEN = token;
+  if (typeof window !== "undefined") {
+    if (token) sessionStorage.setItem(TOKEN_KEY, token);
+    else sessionStorage.removeItem(TOKEN_KEY);
+  }
   api.defaults.headers.common.Authorization = token ? `Bearer ${token}` : "";
-
-  // update socket auth
+  // keep socket auth in sync
   refreshSocketAuth(token);
 }
 
 export function getToken() {
-  return typeof window !== "undefined" ? localStorage.getItem(TOKEN_KEY) : null;
+  if (CURRENT_TOKEN) return CURRENT_TOKEN;
+  if (typeof window !== "undefined") {
+    CURRENT_TOKEN = sessionStorage.getItem(TOKEN_KEY);
+    return CURRENT_TOKEN;
+  }
+  return null;
 }
 
-// init on load
+// init on load (hydrate default header)
 if (typeof window !== "undefined") {
   const t = getToken();
   if (t) api.defaults.headers.common.Authorization = `Bearer ${t}`;
 }
 
-// --- Axios interceptor (always attach latest token) ---
+// ---- Interceptors ----
+// Always attach latest token (belt)
 api.interceptors.request.use((config) => {
-  const token = getToken();
+  const token = CURRENT_TOKEN ?? getToken();
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
 
-// --- Axios interceptor (auto logout at 401) ---
+// Auto logout on 401
 api.interceptors.response.use(
   (r) => r,
   (err) => {
-    if (err?.response?.status === 401) {
-      setToken(null);
-    }
+    if (err?.response?.status === 401) setToken(null);
     return Promise.reject(err);
   }
 );
@@ -93,6 +101,9 @@ export async function listMessages(channelId: string) {
     content: string | null;
     authorId: string;
     createdAt: string;
+    updatedAt?: string;
+    deletedAt?: string | null;
+    deletedBy?: { id: string; displayName: string } | null;
     author: { id: string; displayName: string };
   }>;
 }
@@ -102,6 +113,36 @@ export async function sendMessage(channelId: string, content?: string) {
     content,
   });
   return data;
+}
+
+// Explicitly pass Authorization for PATCH/DELETE to avoid any interceptor/import drift.
+export async function updateMessage(
+  channelId: string,
+  messageId: string,
+  content: string
+) {
+  const token = getToken();
+  const { data } = await api.patch(
+    `/channels/${channelId}/messages/${messageId}`,
+    { content },
+    token ? { headers: { Authorization: `Bearer ${token}` } } : undefined
+  );
+  return data as {
+    id: string;
+    channelId: string;
+    content: string;
+    updatedAt: string;
+    authorId: string;
+    author: { id: string; displayName: string };
+  };
+}
+
+export async function deleteMessage(channelId: string, messageId: string) {
+  const token = getToken();
+  await api.delete(
+    `/channels/${channelId}/messages/${messageId}`,
+    token ? { headers: { Authorization: `Bearer ${token}` } } : undefined
+  );
 }
 
 // ---- Direct Messages ----
@@ -124,13 +165,13 @@ export async function getOrCreateDirectChannel(userId: string) {
   };
 }
 
-// Mark a channel as read
+// Mark channel as read
 export async function markChannelRead(channelId: string) {
   const { data } = await api.post(`/channels/${channelId}/read`);
   return data;
 }
 
-// Get channels with unread counts
+// Channels with unread counts
 export async function listChannelsWithUnread() {
   const { data } = await api.get(`/channels/with-unread`);
   return data as Array<{
