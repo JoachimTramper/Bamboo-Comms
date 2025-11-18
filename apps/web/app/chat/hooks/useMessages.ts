@@ -41,26 +41,35 @@ export function useMessages(
     if (!ready) return;
 
     (async () => {
-      const raw = await listMessages(active!);
+      try {
+        const raw = await listMessages(active!);
 
-      const normalized = raw.reverse().map((m) => ({
-        ...m,
-        // Prisma sends reactions + userId mee; reduce it to what we need
-        reactions: (m as any).reactions
-          ? (m as any).reactions.map((r: any) => ({
-              emoji: r.emoji,
-              userId: r.userId,
-            }))
-          : [],
-      }));
+        const normalized = raw.reverse().map((m) => ({
+          ...m,
+          reactions: (m as any).reactions
+            ? (m as any).reactions.map((r: any) => ({
+                emoji: r.emoji,
+                userId: r.userId,
+              }))
+            : [],
+        }));
 
-      setMsgs(normalized);
-      await markChannelRead(active!);
+        setMsgs(normalized);
 
-      requestAnimationFrame(() => {
-        const el = listRef.current;
-        if (el) el.scrollTop = el.scrollHeight;
-      });
+        // markChannelRead may fail without crashing the UI
+        try {
+          await markChannelRead(active!);
+        } catch (err) {
+          console.warn("markChannelRead failed (ignored):", err);
+        }
+
+        requestAnimationFrame(() => {
+          const el = listRef.current;
+          if (el) el.scrollTop = el.scrollHeight;
+        });
+      } catch (err) {
+        console.error("Failed to load messages:", err);
+      }
     })();
   }, [ready, active]);
 
