@@ -49,7 +49,19 @@ export function useMessages(
           reactions: m.reactions
             ? m.reactions.map((r: any) => ({
                 emoji: r.emoji,
-                userId: r.userId,
+                userId: r.userId ?? r.user?.id,
+              }))
+            : [],
+          mentions: m.mentions
+            ? m.mentions.map((mm: any) => ({
+                userId: mm.userId ?? mm.user?.id,
+                user: mm.user
+                  ? {
+                      id: mm.user.id,
+                      displayName: mm.user.displayName,
+                      avatarUrl: mm.user.avatarUrl ?? null,
+                    }
+                  : undefined,
               }))
             : [],
         }));
@@ -139,6 +151,18 @@ export function useMessages(
                 },
               }
             : null,
+          mentions: p.mentions
+            ? p.mentions.map((mm: any) => ({
+                userId: mm.userId ?? mm.user?.id,
+                user: mm.user
+                  ? {
+                      id: mm.user.id,
+                      displayName: mm.user.displayName,
+                      avatarUrl: mm.user.avatarUrl ?? null,
+                    }
+                  : undefined,
+              }))
+            : [],
         },
       ]);
     };
@@ -278,9 +302,13 @@ export function useMessages(
   }, [msgs, ready, active]);
 
   // Actions with optimistic UI
-  const send = async (text: string, replyToMessageId?: string) => {
+  const send = async (
+    text: string,
+    replyToMessageId?: string,
+    mentionUserIds: string[] = []
+  ) => {
     if (!active) return;
-    await sendMessage(active, text, replyToMessageId);
+    await sendMessage(active, text, replyToMessageId, mentionUserIds);
   };
 
   const edit = async (messageId: string, text: string) => {

@@ -35,14 +35,15 @@ export class MessagesController {
   @Post()
   create(
     @Param('id') channelId: string,
-    @Body() dto: CreateMessageDto, // { content?: string }
-    @User() user: { sub: string; email: string }, // from JWT
+    @Body() dto: CreateMessageDto,
+    @User() user: { sub: string; email: string },
   ) {
     return this.svc.create(
       channelId,
       user.sub,
       dto.content,
       dto.replyToMessageId,
+      dto.mentionUserIds ?? [],
     );
   }
 

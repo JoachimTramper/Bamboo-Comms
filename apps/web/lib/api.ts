@@ -145,11 +145,13 @@ export async function listMessages(
 export async function sendMessage(
   channelId: string,
   content?: string,
-  replyToMessageId?: string
+  replyToMessageId?: string,
+  mentionUserIds: string[] = []
 ) {
   const { data } = await api.post(`/channels/${channelId}/messages`, {
     content,
     replyToMessageId,
+    mentionUserIds,
   });
   return data;
 }

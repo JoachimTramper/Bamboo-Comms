@@ -1,5 +1,11 @@
 // apps/api/src/messages/dto/create-message.dto.ts
-import { IsOptional, IsString, MaxLength } from 'class-validator';
+import {
+  IsOptional,
+  IsString,
+  MaxLength,
+  IsArray,
+  ArrayUnique,
+} from 'class-validator';
 
 export class CreateMessageDto {
   @IsOptional()
@@ -10,4 +16,10 @@ export class CreateMessageDto {
   @IsOptional()
   @IsString()
   replyToMessageId?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  @ArrayUnique()
+  mentionUserIds?: string[];
 }

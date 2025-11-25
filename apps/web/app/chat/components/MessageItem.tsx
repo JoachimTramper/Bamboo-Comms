@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import type React from "react"; // 👈 nodig voor React.MouseEvent / PointerEvent
+import type React from "react"; // nodig voor React.MouseEvent / PointerEvent
 import type { Message } from "../types";
 import { Avatar } from "./Avatar";
 
@@ -43,8 +43,16 @@ export function MessageItem({
     !!m.updatedAt &&
     new Date(m.updatedAt).getTime() > new Date(m.createdAt).getTime();
 
+  const isMentioned =
+    !isMe &&
+    !!m.mentions?.some(
+      (mm: any) =>
+        mm.userId === meId || // if mentions is saved as { userId }
+        mm.user?.id === meId // or if you get it via include { user }
+    );
+
   const [menuOpen, setMenuOpen] = useState(false);
-  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null); // 👈 ipv NodeJS.Timeout
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const openMenu = () => {
     if (isDeleted) return;
@@ -64,7 +72,7 @@ export function MessageItem({
     if (e.pointerType === "touch") {
       longPressTimer.current = setTimeout(() => {
         openMenu();
-      }, 400); // 400–500ms feels like "press & hold"
+      }, 400);
     }
   };
 
@@ -99,7 +107,7 @@ export function MessageItem({
 
       <div className="flex-1 min-w-0">
         {/* header line */}
-        <div className="text-xs text-gray-500 flex items-center gap-2">
+        <div className="text-xs text-gray-500 flex items-center gap-2 flex-wrap">
           <span className="font-medium text-gray-700">
             {m.author.displayName}
           </span>
@@ -107,6 +115,16 @@ export function MessageItem({
           <time dateTime={m.createdAt}>{formatDateTime(m.createdAt)}</time>
           {isEdited && !isDeleted && (
             <span className="italic text-gray-400">(edited)</span>
+          )}
+
+          {/* 👇 nieuw: badge als dit bericht jou mentiont */}
+          {isMentioned && (
+            <>
+              <span>•</span>
+              <span className="px-1.5 py-0.5 rounded-full bg-yellow-100 text-yellow-700 text-[10px] font-medium">
+                Mentions you
+              </span>
+            </>
           )}
         </div>
 
@@ -177,7 +195,7 @@ export function MessageItem({
               )}
             </div>
 
-            {/* actions under the message */}
+            {/* actions onder de message */}
             {!isDeleted && (
               <>
                 {/* Desktop: hover actions */}

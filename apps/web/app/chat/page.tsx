@@ -145,9 +145,18 @@ export default function ChatPage() {
             members: dm.members ?? [],
           };
         });
+
         setChannels((prev) => {
-          const ids = new Set(prev.map((c) => c.id));
-          return [...prev, ...normalized.filter((n) => !ids.has(n.id))];
+          const byId = new Map(prev.map((c) => [c.id, c]));
+
+          for (const dm of normalized) {
+            const existing = byId.get(dm.id);
+            // merge: keep existing props (such as unreadCount),
+            // but supplement/override with DM info (members, isDirect, name)
+            byId.set(dm.id, existing ? { ...existing, ...dm } : dm);
+          }
+
+          return Array.from(byId.values());
         });
       } catch (e) {
         console.error("Failed to load DMs:", e);
@@ -212,13 +221,46 @@ export default function ChatPage() {
     }
   }
 
+  function extractMentionUserIds(
+    content: string,
+    candidates: Array<{ id: string; displayName: string }>
+  ): string[] {
+    if (!candidates.length || !content) return [];
+
+    const regex = /@([A-Za-z0-9_]+)/g;
+    const names = new Set<string>();
+    let match: RegExpExecArray | null = null;
+
+    while ((match = regex.exec(content)) !== null) {
+      const username = match[1];
+      if (username) {
+        names.add(username);
+      }
+    }
+
+    if (names.size === 0) return [];
+
+    const byName = new Map(
+      candidates.map((m) => [m.displayName.toLowerCase(), m.id])
+    );
+
+    const ids: string[] = [];
+    for (const name of names) {
+      const id = byName.get(name.toLowerCase());
+      if (id) ids.push(id);
+    }
+    return ids;
+  }
+
   async function handleSend() {
     if (!canSend || !active) return;
     try {
-      // second argument is replyToMessageId
-      await send(text.trim(), replyTo?.id ?? undefined);
+      const mentions = extractMentionUserIds(text, mentionCandidates);
+
+      await send(text.trim(), replyTo?.id ?? undefined, mentions);
+
       setText("");
-      setReplyTo(null); // clear reply target after sending
+      setReplyTo(null);
     } catch (e) {
       console.error("Failed to send message:", e);
     }
@@ -344,6 +386,26 @@ export default function ChatPage() {
   const activeChannel = channels.find((c) => c.id === active);
   const regularChannels = channels.filter((c) => !c.isDirect);
   const dmChannels = channels.filter((c) => c.isDirect);
+
+  const mentionCandidates =
+    activeChannel?.members && activeChannel.members.length > 0
+      ? activeChannel.members.map((m) => ({
+          id: m.id,
+          displayName: m.displayName,
+        }))
+      : [
+          // always yourself
+          { id: user.sub, displayName: user.displayName },
+          // plus everyone is known via presence
+          ...othersOnline.map((u) => ({
+            id: u.id,
+            displayName: u.displayName,
+          })),
+          ...recently.map((u) => ({
+            id: u.id,
+            displayName: u.displayName,
+          })),
+        ];
 
   return (
     <div className="h-dvh overflow-hidden flex flex-col">
@@ -492,6 +554,7 @@ export default function ChatPage() {
             onSend={handleSend}
             replyTo={replyTo}
             onCancelReply={() => setReplyTo(null)}
+            mentionCandidates={mentionCandidates}
           />
         </main>
       </div>

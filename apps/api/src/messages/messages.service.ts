@@ -59,6 +59,19 @@ export class MessagesService {
             },
           },
         },
+
+        mentions: {
+          select: {
+            userId: true,
+            user: {
+              select: {
+                id: true,
+                displayName: true,
+                avatarUrl: true,
+              },
+            },
+          },
+        },
       },
     });
   }
@@ -68,6 +81,7 @@ export class MessagesService {
     authorId: string,
     content?: string,
     replyToMessageId?: string,
+    mentionUserIds: string[] = [],
   ) {
     // 1) channel exists?
     const exists = await this.prisma.channel.findUnique({
@@ -75,7 +89,7 @@ export class MessagesService {
     });
     if (!exists) throw new NotFoundException('Channel not found');
 
-    // 2) parent check (optioneel, voor replies)
+    // 2) parent check (optional, for replies)
     let parentId: string | undefined = undefined;
     if (replyToMessageId) {
       const parent = await this.prisma.message.findUnique({
@@ -90,13 +104,19 @@ export class MessagesService {
       parentId = parent.id;
     }
 
-    // 3) create message (incl. parent, author, reactions)
+    // 2b) clean mentions (remove duplicates, remove falsy)
+    const cleanMentions = Array.from(new Set(mentionUserIds)).filter(Boolean);
+
+    // 3) create message (incl. parent, author, reactions, mentions)
     const msg = await this.prisma.message.create({
       data: {
         channelId,
         authorId,
         content: content ?? '',
         parentId,
+        mentions: {
+          create: cleanMentions.map((userId) => ({ userId })),
+        },
       },
       include: {
         author: {
@@ -126,10 +146,22 @@ export class MessagesService {
             },
           },
         },
+        // optional: return mentions directly
+        mentions: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                displayName: true,
+                avatarUrl: true,
+              },
+            },
+          },
+        },
       },
     });
 
-    // 4) realtime push (full payload incl. parent + reactions)
+    // 4) realtime push (full payload incl. parent + reactions + optional mentions)
     this.ws.server.emit('message.created', {
       id: msg.id,
       channelId: msg.channelId,
@@ -158,6 +190,15 @@ export class MessagesService {
           id: r.user.id,
           displayName: r.user.displayName,
           avatarUrl: r.user.avatarUrl ?? null,
+        },
+      })),
+      // optional, helpful to use mentions realtime
+      mentions: msg.mentions.map((m) => ({
+        userId: m.userId,
+        user: {
+          id: m.user.id,
+          displayName: m.user.displayName,
+          avatarUrl: m.user.avatarUrl ?? null,
         },
       })),
     });
