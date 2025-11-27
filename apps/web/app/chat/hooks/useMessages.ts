@@ -12,10 +12,15 @@ import type { Message } from "../types";
 
 type ResolveDisplayName = (id: string) => string | undefined;
 
+type UseMessagesOptions = {
+  resolveDisplayName?: ResolveDisplayName;
+  onIncomingMessage?: (msg: Message) => void;
+};
+
 export function useMessages(
   active: string | null,
   userId?: string,
-  opts?: { resolveDisplayName?: ResolveDisplayName }
+  opts?: UseMessagesOptions
 ) {
   const [msgs, setMsgs] = useState<Message[]>([]);
   const listRef = useRef<HTMLDivElement | null>(null);
@@ -36,6 +41,12 @@ export function useMessages(
   useEffect(() => {
     userIdRef.current = userId;
   }, [userId]);
+
+  // keep latest onIncomingMessage in a ref as well
+  const onIncomingRef = useRef<((msg: Message) => void) | undefined>(undefined);
+  useEffect(() => {
+    onIncomingRef.current = opts?.onIncomingMessage;
+  }, [opts?.onIncomingMessage]);
 
   useEffect(() => {
     if (!ready) return;
@@ -115,56 +126,73 @@ export function useMessages(
 
     const onCreated = (p: any) => {
       const channelId = p?.channelId ?? p?.channel?.id ?? p?.channel_id;
-      if (channelId !== active) return;
-      setMsgs((prev) => [
-        ...prev,
-        {
-          id: p.id,
-          content: p.content ?? "",
-          authorId: p.authorId ?? p?.author?.id ?? "unknown",
-          createdAt:
-            typeof p.createdAt === "string"
-              ? p.createdAt
-              : (p?.created_at ?? new Date().toISOString()),
-          updatedAt: p.updatedAt,
-          deletedAt: p.deletedAt ?? null,
-          deletedBy: p.deletedBy ?? null,
-          author: p.author
-            ? {
-                id: p.author.id,
-                displayName: p.author.displayName,
-                avatarUrl: p.author.avatarUrl ?? null,
-              }
-            : {
-                id: p.authorId ?? "unknown",
-                displayName: p?.author?.displayName ?? "Someone",
-                avatarUrl: null,
+
+      const normalized: Message = {
+        id: p.id,
+        content: p.content ?? "",
+        authorId: p.authorId ?? p?.author?.id ?? "unknown",
+        channelId,
+        createdAt:
+          typeof p.createdAt === "string"
+            ? p.createdAt
+            : (p?.created_at ?? new Date().toISOString()),
+        updatedAt: p.updatedAt,
+        deletedAt: p.deletedAt ?? null,
+        deletedBy: p.deletedBy ?? null,
+        author: p.author
+          ? {
+              id: p.author.id,
+              displayName: p.author.displayName,
+              avatarUrl: p.author.avatarUrl ?? null,
+            }
+          : {
+              id: p.authorId ?? "unknown",
+              displayName: p?.author?.displayName ?? "Someone",
+              avatarUrl: null,
+            },
+        reactions: [],
+        parent: p.parent
+          ? {
+              id: p.parent.id,
+              content: p.parent.content,
+              author: {
+                id: p.parent.author.id,
+                displayName: p.parent.author.displayName,
               },
-          reactions: [],
-          parent: p.parent
-            ? {
-                id: p.parent.id,
-                content: p.parent.content,
-                author: {
-                  id: p.parent.author.id,
-                  displayName: p.parent.author.displayName,
-                },
-              }
-            : null,
-          mentions: p.mentions
-            ? p.mentions.map((mm: any) => ({
-                userId: mm.userId ?? mm.user?.id,
-                user: mm.user
-                  ? {
-                      id: mm.user.id,
-                      displayName: mm.user.displayName,
-                      avatarUrl: mm.user.avatarUrl ?? null,
-                    }
-                  : undefined,
-              }))
-            : [],
-        },
-      ]);
+            }
+          : null,
+        mentions: p.mentions
+          ? p.mentions.map((mm: any) => ({
+              userId: mm.userId ?? mm.user?.id,
+              user: mm.user
+                ? {
+                    id: mm.user.id,
+                    displayName: mm.user.displayName,
+                    avatarUrl: mm.user.avatarUrl ?? null,
+                  }
+                : undefined,
+            }))
+          : [],
+        attachments: p.attachments
+          ? p.attachments.map((a: any) => ({
+              id: a.id,
+              url: a.url,
+              fileName: a.fileName,
+              mimeType: a.mimeType,
+              size: a.size,
+            }))
+          : [],
+      };
+
+      // only add to the UI if this is the active channel
+      if (channelId === active) {
+        setMsgs((prev) => [...prev, normalized]);
+      }
+
+      // but ALWAYS let the callback run (for notifications etc.)
+      if (onIncomingRef.current) {
+        onIncomingRef.current(normalized);
+      }
     };
 
     const onUpdated = (p: any) => {
@@ -283,7 +311,7 @@ export function useMessages(
     };
   }, [ready, active]);
 
-  // Auto-scroll at bottom on new messages
+  // auto-scroll at bottom on new messages
   useEffect(() => {
     const el = listRef.current;
     if (!el || !ready || !active) return;
@@ -301,14 +329,27 @@ export function useMessages(
     }
   }, [msgs, ready, active]);
 
-  // Actions with optimistic UI
+  // actions with optimistic UI
   const send = async (
-    text: string,
+    text?: string,
     replyToMessageId?: string,
-    mentionUserIds: string[] = []
+    mentionUserIds: string[] = [],
+    attachments: Array<{
+      url: string;
+      fileName: string;
+      mimeType: string;
+      size: number;
+    }> = []
   ) => {
     if (!active) return;
-    await sendMessage(active, text, replyToMessageId, mentionUserIds);
+
+    await sendMessage(
+      active,
+      text,
+      replyToMessageId,
+      mentionUserIds,
+      attachments
+    );
   };
 
   const edit = async (messageId: string, text: string) => {

@@ -51,6 +51,7 @@ export class MessagesController {
       dto.content,
       dto.replyToMessageId,
       dto.mentionUserIds ?? [],
+      dto.attachments ?? [],
     );
   }
 

@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import type React from "react"; // nodig voor React.MouseEvent / PointerEvent
 import type { Message } from "../types";
 import { Avatar } from "./Avatar";
+import { resolveFileUrl } from "@/lib/files";
 
 export function MessageItem({
   m,
@@ -21,6 +22,7 @@ export function MessageItem({
   setEditText,
   formatDateTime,
   showSeen,
+  isLastOwn,
 }: {
   m: Message;
   meId: string;
@@ -37,6 +39,7 @@ export function MessageItem({
   setEditText: (v: string) => void;
   formatDateTime: (iso: string) => string;
   showSeen?: boolean;
+  isLastOwn?: boolean;
 }) {
   const isDeleted = !!m.deletedAt;
   const isEdited =
@@ -117,7 +120,7 @@ export function MessageItem({
             <span className="italic text-gray-400">(edited)</span>
           )}
 
-          {/* 👇 nieuw: badge als dit bericht jou mentiont */}
+          {/* Badge when mentioned */}
           {isMentioned && (
             <>
               <span>•</span>
@@ -185,7 +188,7 @@ export function MessageItem({
               </div>
 
               {/* Sent/Seen right aligned, DM only */}
-              {isMe && isDirect && !isDeleted && (
+              {isMe && isDirect && !isDeleted && (showSeen || isLastOwn) && (
                 <div className="text-[11px] text-gray-400 flex items-center gap-1 shrink-0">
                   <span aria-hidden>{showSeen ? "✓✓" : "✓"}</span>
                   <span className="hidden sm:inline">
@@ -194,6 +197,52 @@ export function MessageItem({
                 </div>
               )}
             </div>
+
+            {/* Attachments */}
+            {!isDeleted && m.attachments && m.attachments.length > 0 && (
+              <div className="mt-2 flex flex-col gap-1">
+                {m.attachments.map((att) => {
+                  const isImage = att.mimeType.startsWith("image/");
+                  const url = resolveFileUrl(att.url);
+
+                  return (
+                    <div
+                      key={att.id}
+                      className="inline-flex items-center gap-2 text-xs text-gray-600"
+                    >
+                      {isImage ? (
+                        <a
+                          href={url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="border rounded-md overflow-hidden max-w-xs hover:border-gray-400"
+                        >
+                          <img
+                            src={url}
+                            alt={att.fileName}
+                            className="max-h-40 w-auto object-cover block"
+                          />
+                        </a>
+                      ) : (
+                        <a
+                          href={url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-2 px-2 py-1 border rounded-md hover:bg-gray-50"
+                        >
+                          <span className="text-[11px] font-medium truncate max-w-40">
+                            {att.fileName}
+                          </span>
+                          <span className="text-[10px] text-gray-400">
+                            {(att.size / 1024).toFixed(1)} KB
+                          </span>
+                        </a>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
 
             {/* actions onder de message */}
             {!isDeleted && (

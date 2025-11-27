@@ -166,12 +166,14 @@ export async function sendMessage(
   channelId: string,
   content?: string,
   replyToMessageId?: string,
-  mentionUserIds: string[] = []
+  mentionUserIds: string[] = [],
+  attachments: Array<any> = []
 ) {
   const { data } = await api.post(`/channels/${channelId}/messages`, {
     content,
     replyToMessageId,
     mentionUserIds,
+    attachments,
   });
   return data;
 }
@@ -230,6 +232,25 @@ export async function unreactToMessage(
     { data: { emoji } }
   );
   return data as { ok: true } | undefined;
+}
+
+// attachments
+export async function uploadMessageFile(file: File) {
+  const form = new FormData();
+  form.append("file", file);
+
+  const { data } = await api.post("/uploads/message", form, {
+    headers: {
+      "Content-Type": "multipart/form-data",
+    },
+  });
+
+  return data as {
+    url: string;
+    fileName: string;
+    mimeType: string;
+    size: number;
+  };
 }
 
 // ---- Direct Messages ----

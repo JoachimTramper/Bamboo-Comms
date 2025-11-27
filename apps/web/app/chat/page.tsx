@@ -18,7 +18,12 @@ import {
   getOrCreateDirectChannel,
   updateAvatar,
   uploadAvatarFile,
+  uploadMessageFile,
 } from "@/lib/api";
+import {
+  ensureNotificationPermission,
+  showBrowserNotification,
+} from "@/lib/notifications";
 
 import type { ChannelWithUnread, Message, Me } from "./types";
 import { MessageList } from "./components/MessageList";
@@ -105,6 +110,24 @@ export default function ChatPage() {
     lastReadMessageIdByOthers,
   } = useMessages(active, user?.sub, {
     resolveDisplayName,
+    onIncomingMessage: (msg) => {
+      if (!user) return;
+
+      // skip own messages
+      if (msg.authorId === user.sub) return;
+
+      const isDifferentChannel = msg.channelId !== active;
+
+      const isMentioned = msg.mentions?.some((m) => m.userId === user.sub);
+
+      if (isMentioned && isDifferentChannel) {
+        showBrowserNotification({
+          title: `${msg.author.displayName} mentioned you`,
+          body: msg.content ?? "(no text)",
+          icon: msg.author.avatarUrl ?? undefined,
+        });
+      }
+    },
   });
 
   const { label: typingLabel, emitTyping } = useTyping(active, user?.sub);
@@ -183,12 +206,47 @@ export default function ChatPage() {
     }
   }
 
-  async function handleSend() {
-    if (!canSend || !active) return;
+  async function handleSend(files: File[] = []) {
+    if (!active) return;
+
+    const trimmed = text.trim();
+    const hasText = trimmed.length > 0;
+    const hasFiles = files.length > 0;
+
+    // Niets te versturen → stoppen
+    if (!hasText && !hasFiles) return;
+
     try {
       const mentions = extractMentionUserIds(text, mentionCandidates);
 
-      await send(text.trim(), replyTo?.id ?? undefined, mentions);
+      // 1) Upload alle files
+      let attachments: Array<{
+        url: string;
+        fileName: string;
+        mimeType: string;
+        size: number;
+      }> = [];
+
+      if (files.length > 0) {
+        const uploaded = await Promise.all(
+          files.map((f) => uploadMessageFile(f))
+        );
+
+        attachments = uploaded.map((a) => ({
+          url: a.url,
+          fileName: a.fileName,
+          mimeType: a.mimeType,
+          size: a.size,
+        }));
+      }
+
+      // 2) Message versturen via hook, NIET direct sendMessage
+      await send(
+        trimmed || undefined,
+        replyTo?.id ?? undefined,
+        mentions,
+        attachments
+      );
 
       setText("");
       setReplyTo(null);
@@ -350,6 +408,16 @@ export default function ChatPage() {
         sidebarOpen={sidebarOpen}
         setSidebarOpen={setSidebarOpen}
       />
+
+      {/* Enable notifications button */}
+      <div className="px-3 py-2 border-b bg-white">
+        <button
+          onClick={() => ensureNotificationPermission()}
+          className="text-xs text-blue-600 underline"
+        >
+          Enable notifications
+        </button>
+      </div>
 
       {/* main layout */}
       <div className="flex-1 min-h-0 flex">

@@ -5,7 +5,24 @@ import {
   MaxLength,
   IsArray,
   ArrayUnique,
+  ValidateNested,
+  IsInt,
 } from 'class-validator';
+import { Type } from 'class-transformer';
+
+class AttachmentDto {
+  @IsString()
+  url: string;
+
+  @IsString()
+  fileName: string;
+
+  @IsString()
+  mimeType: string;
+
+  @IsInt()
+  size: number;
+}
 
 export class CreateMessageDto {
   @IsOptional()
@@ -22,4 +39,10 @@ export class CreateMessageDto {
   @IsString({ each: true })
   @ArrayUnique()
   mentionUserIds?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => AttachmentDto)
+  attachments?: AttachmentDto[];
 }

@@ -32,7 +32,7 @@ type Props = {
 };
 
 export function MessageList({
-  msgs,
+  msgs = [],
   meId,
   channelId,
   listRef,
@@ -51,17 +51,40 @@ export function MessageList({
   scrollToMessageId,
   onScrolledToMessage,
 }: Props) {
-  const safeMsgs = msgs ?? [];
+  const safeMsgs = msgs;
 
-  // map messageId -> DOM element
   const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
-
-  // which message is currently highlighted (jump target)
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
 
   const lastReadIndex = lastReadMessageIdByOthers
     ? safeMsgs.findIndex((m) => m.id === lastReadMessageIdByOthers)
     : -1;
+
+  // latest message from me that is up to and including lastReadIndex
+  const lastMySeenIndex =
+    isDirect && lastReadIndex >= 0
+      ? (() => {
+          for (let i = lastReadIndex; i >= 0; i--) {
+            const msg = safeMsgs[i];
+            if (!msg) continue;
+            if (msg.authorId === meId) return i;
+          }
+          return -1;
+        })()
+      : -1;
+
+  // latest message from me in this list
+  const lastMyIndex =
+    isDirect && safeMsgs.length > 0
+      ? (() => {
+          for (let i = safeMsgs.length - 1; i >= 0; i--) {
+            const msg = safeMsgs[i];
+            if (!msg) continue;
+            if (msg.authorId === meId) return i;
+          }
+          return -1;
+        })()
+      : -1;
 
   // scroll when a jump target is set
   useEffect(() => {
@@ -97,16 +120,12 @@ export function MessageList({
       className="flex-1 overflow-auto p-4 space-y-3"
     >
       {safeMsgs.map((m, index) => {
-        // "Seen" when:
-        // - DM
-        // - there's a lastReadIndex
-        // - this message is at or before lastReadIndex
-        // - and was sent by me
-        const showSeen =
-          isDirect &&
-          lastReadIndex >= 0 &&
-          index <= lastReadIndex &&
-          m.authorId === meId;
+        // only the last own message before the other has read
+        const showSeen = isDirect && index === lastMySeenIndex;
+
+        // Last own message (for "Sent")
+        const isLastOwn =
+          isDirect && m.authorId === meId && index === lastMyIndex;
 
         const isHighlighted = highlightedId === m.id;
 
@@ -136,6 +155,7 @@ export function MessageList({
               setEditText={setEditText}
               formatDateTime={formatDateTime}
               showSeen={showSeen}
+              isLastOwn={isLastOwn}
             />
           </div>
         );

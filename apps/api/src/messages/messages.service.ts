@@ -72,6 +72,7 @@ export class MessagesService {
             },
           },
         },
+        attachments: true,
       },
     });
   }
@@ -149,6 +150,12 @@ export class MessagesService {
     content?: string,
     replyToMessageId?: string,
     mentionUserIds: string[] = [],
+    attachments: {
+      url: string;
+      fileName: string;
+      mimeType: string;
+      size: number;
+    }[] = [],
   ) {
     // 1) channel exists?
     const exists = await this.prisma.channel.findUnique({
@@ -174,7 +181,7 @@ export class MessagesService {
     // 2b) clean mentions (remove duplicates, remove falsy)
     const cleanMentions = Array.from(new Set(mentionUserIds)).filter(Boolean);
 
-    // 3) create message (incl. parent, author, reactions, mentions)
+    // 3) create message (incl. parent, author, reactions, mentions, attachments)
     const msg = await this.prisma.message.create({
       data: {
         channelId,
@@ -183,6 +190,14 @@ export class MessagesService {
         parentId,
         mentions: {
           create: cleanMentions.map((userId) => ({ userId })),
+        },
+        attachments: {
+          create: attachments.map((a) => ({
+            url: a.url,
+            fileName: a.fileName,
+            mimeType: a.mimeType,
+            size: a.size,
+          })),
         },
       },
       include: {
@@ -213,7 +228,6 @@ export class MessagesService {
             },
           },
         },
-        // optional: return mentions directly
         mentions: {
           include: {
             user: {
@@ -225,10 +239,11 @@ export class MessagesService {
             },
           },
         },
+        attachments: true, // 👈 nieuw
       },
     });
 
-    // 4) realtime push (full payload incl. parent + reactions + optional mentions)
+    // 4) realtime push (full payload incl. parent + reactions + mentions + attachments)
     this.ws.server.emit('message.created', {
       id: msg.id,
       channelId: msg.channelId,
@@ -259,7 +274,6 @@ export class MessagesService {
           avatarUrl: r.user.avatarUrl ?? null,
         },
       })),
-      // optional, helpful to use mentions realtime
       mentions: msg.mentions.map((m) => ({
         userId: m.userId,
         user: {
@@ -267,6 +281,13 @@ export class MessagesService {
           displayName: m.user.displayName,
           avatarUrl: m.user.avatarUrl ?? null,
         },
+      })),
+      attachments: msg.attachments.map((a) => ({
+        id: a.id,
+        url: a.url,
+        fileName: a.fileName,
+        mimeType: a.mimeType,
+        size: a.size,
       })),
     });
 

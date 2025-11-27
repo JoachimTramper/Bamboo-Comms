@@ -33,8 +33,17 @@ export type MessageParent = {
   };
 };
 
+export type MessageAttachment = {
+  id: string;
+  url: string;
+  fileName: string;
+  mimeType: string;
+  size: number;
+};
+
 export type Message = {
   id: string;
+  channelId: string;
   content: string | null;
   authorId: string;
   createdAt: string;
@@ -53,6 +62,7 @@ export type Message = {
   reactions?: MessageReaction[];
   parent?: MessageParent | null;
   mentions?: MessageMention[];
+  attachments?: MessageAttachment[];
 };
 
 import type { MeResponse } from "@/lib/api";
