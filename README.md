@@ -141,20 +141,25 @@ Lightweight realtime presence system:
 
 ## Docker Compose (included in repo)
 
+```yaml
 version: "3.9"
+
 services:
-db:
-image: postgres:15
-restart: always
-environment:
-POSTGRES_USER: postgres
-POSTGRES_PASSWORD: postgres
-POSTGRES_DB: chat
-ports: - "5432:5432"
-volumes: - pgdata:/var/lib/postgresql/data
+  db:
+    image: postgres:15
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: chat
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
 
 volumes:
-pgdata:
+  pgdata:
+```
 
 ---
 
@@ -168,4 +173,4 @@ pgdata:
 
 ## License
 
-MIT © 2025 <Joachim Tramper>
+MIT © 2025 Joachim Tramper
