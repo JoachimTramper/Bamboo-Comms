@@ -42,3 +42,6 @@ yarn-error.log*
 
 # Prisma
 .prisma/
+
+# File uploads
+apps/api/uploads/

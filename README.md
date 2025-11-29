@@ -1,6 +1,17 @@
 # Chat AI Platform
 
-A modern real-time chat application built with Next.js (React + TypeScript), NestJS, Prisma, PostgreSQL, and Socket.IO, organized in a Turborepo monorepo.
+A modern full-stack real-time chat platform built with **Next.js**, **NestJS**, **Prisma**, **PostgreSQL**, and **Socket.IO**, organized in a clean **Turborepo** monorepo.
+
+This app includes:
+
+- JWT authentication
+- Channels & Direct Messages
+- Realtime messaging
+- Full presence (online / idle / offline)
+- Typing indicators
+- User avatars + uploads
+- Responsive UI
+- Prisma ORM + PostgreSQL
 
 ---
 
@@ -19,6 +30,45 @@ A modern real-time chat application built with Next.js (React + TypeScript), Nes
 apps/
 ├─ api/ → NestJS backend (REST + WebSocket)
 └─ web/ → Next.js frontend UI
+
+---
+
+## ✨ Features
+
+### Authentication
+
+- Register & Login
+- JWT access tokens
+- Automatic token injection in API + WebSocket calls
+
+### Messaging
+
+- Public channels
+- Direct message channels (DM)
+- Live message streaming
+- Auto-scrolling
+- Persistent message history
+
+### Presence
+
+Lightweight realtime presence system:
+
+- **Online** when connected
+- **Idle** after 5 minutes of inactivity
+- **Offline** when all sockets disconnect
+
+### Typing Indicators
+
+- Realtime
+- Supports multiple typers
+- Per-channel
+
+### Avatars & Uploads
+
+- Local image uploads
+- Avatar management UI
+- Fallback avatar
+- Uploads folder git-ignored by default
 
 ---
 
@@ -67,17 +117,6 @@ apps/
    Frontend URL: http://localhost:3001
    Ensure the frontend env points at the API:
    NEXT_PUBLIC_API_BASE=http://localhost:3000
-
----
-
-## Features
-
-- JWT authentication (login, register, refresh)
-- Real-time messaging via Socket.IO
-- Channel creation and listing
-- Typing indicators
-- Auto-scroll and live updates
-- Clean separation of frontend and backend in a monorepo
 
 ---
 
