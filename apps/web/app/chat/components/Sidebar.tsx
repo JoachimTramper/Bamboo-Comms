@@ -64,8 +64,9 @@ export function Sidebar({
   }
 
   return (
-    <aside className="border-r p-3 space-y-4 overflow-auto min-h-0">
-      <div className="space-y-6">
+    <aside className="border-r p-3 overflow-auto min-h-0 bg-neutral-200">
+      {/* Channels + DMs */}
+      <div className="space-y-3">
         {/* Channels */}
         <section>
           <h2 className="font-semibold text-xs uppercase tracking-wide text-gray-500">
@@ -114,7 +115,9 @@ export function Sidebar({
               </button>
             ))}
             {regularChannels.length === 0 && (
-              <div className="text-sm text-gray-500 mt-1">No channels yet</div>
+              <div className="text-sm text-gray-500 mt-1 px-2">
+                No channels yet
+              </div>
             )}
           </div>
         </section>
@@ -126,45 +129,73 @@ export function Sidebar({
           </h3>
           <div className="mt-2 space-y-1">
             {dmChannels.length === 0 ? (
-              <div className="text-sm text-gray-500">No DMs yet</div>
+              <div className="text-sm text-gray-500 px-2">No DMs yet</div>
             ) : (
               dmChannels.map((c) => {
-                // Other person in the DM channel (not myself)
-                const other =
+                // Andere persoon in het DM-kanaal (niet ikzelf)
+                let other =
                   c.members && c.members.length > 0
                     ? (c.members.find((m) => m.id !== meId) ?? c.members[0])
                     : undefined;
 
-                const presenceUser =
+                // 1) Presence eerst op id
+                let presenceUser =
                   (other && othersOnline.find((u) => u.id === other.id)) ||
                   (other && recently.find((u) => u.id === other.id)) ||
                   null;
 
-                const status: PresenceStatus = other
-                  ? getUserStatus(other.id)
-                  : "offline";
+                // 2) Zo niet, proberen op kanaalnaam (c.name)
+                if (!presenceUser) {
+                  presenceUser =
+                    othersOnline.find((u) => u.displayName === c.name) ||
+                    recently.find((u) => u.displayName === c.name) ||
+                    null;
+                }
+
+                // 3) Status bepalen:
+                //    - expliciet "idle"  → idle
+                //    - expliciet "online"→ online
+                //    - anders            → offline
+                let status: PresenceStatus;
+                if (presenceUser?.status === "idle") {
+                  status = "idle";
+                } else if (presenceUser?.status === "online") {
+                  status = "online";
+                } else if (other) {
+                  // fallback op bestaande helper (gebruikt othersOnline/recently)
+                  status = getUserStatus(other.id);
+                } else {
+                  status = "offline";
+                }
 
                 const dotClass = getStatusDotClass(status);
+
+                // 4) Naam + avatar-url bepalen met presence als eerste bron
+                const displayName =
+                  presenceUser?.displayName ?? other?.displayName ?? c.name;
+
+                const avatarUrl =
+                  presenceUser?.avatarUrl ?? other?.avatarUrl ?? null;
+
+                const hasKnownUser = !!(presenceUser || other);
 
                 return (
                   <button
                     key={c.id}
                     onClick={() => setActive(c.id)}
                     className={`flex items-center justify-between w-full text-left px-2 py-1 rounded text-sm border
-                      ${
-                        active === c.id
-                          ? "bg-blue-50 text-blue-700 border-blue-200 font-medium"
-                          : "hover:bg-gray-100 border-transparent"
-                      }`}
+              ${
+                active === c.id
+                  ? "bg-blue-50 text-blue-700 border-blue-200 font-medium"
+                  : "hover:bg-gray-100 border-transparent"
+              }`}
                   >
                     <div className="flex items-center gap-2 min-w-0">
-                      {other ? (
+                      {hasKnownUser ? (
                         <div className="relative">
                           <Avatar
-                            name={other.displayName}
-                            avatarUrl={
-                              presenceUser?.avatarUrl ?? other.avatarUrl ?? null
-                            }
+                            name={displayName}
+                            avatarUrl={avatarUrl}
                             size={22}
                           />
                           <span
@@ -192,18 +223,23 @@ export function Sidebar({
       </div>
 
       {/* Online */}
-      <div>
-        <h3 className="font-semibold">Online ({othersOnline.length})</h3>
-        <div className="mt-1 space-y-1">
+      <div className="mt-3">
+        <h3 className="font-semibold text-xs uppercase tracking-wide text-gray-500">
+          Online ({othersOnline.length})
+        </h3>
+        <div className="mt-1 space-y-0.5">
           {othersOnline.length === 0 ? (
-            <div className="text-sm text-gray-500">No one else online</div>
+            <div className="text-sm text-gray-500 px-2">No one else online</div>
           ) : (
             othersOnline.map((u) => (
-              <div key={u.id} className="flex items-center gap-2 text-sm">
+              <div
+                key={u.id}
+                className="flex items-center gap-2 text-sm px-2 py-1"
+              >
                 <Avatar
                   name={u.displayName}
                   avatarUrl={u.avatarUrl ?? null}
-                  size={20}
+                  size={22}
                 />
                 <span className="flex items-center gap-2">
                   {u.displayName}
@@ -223,29 +259,31 @@ export function Sidebar({
       </div>
 
       {/* Offline */}
-      <div className="mt-6">
-        <h3 className="font-semibold">Offline ({recently.length})</h3>
-        <div className="mt-1 space-y-2">
+      <div className="mt-3">
+        <h3 className="font-semibold text-xs uppercase tracking-wide text-gray-500">
+          Offline ({recently.length})
+        </h3>
+        <div className="mt-1 space-y-0.5">
           {recently.length === 0 ? (
-            <div className="text-sm text-gray-500">No offline users</div>
+            <div className="text-sm text-gray-500 px-2">No offline users</div>
           ) : (
             recently.map((u) => (
               <div
                 key={u.id}
-                className="text-sm border-b border-gray-100 pb-1 last:border-0"
+                className="text-sm border-b border-gray-100 pb-1 last:border-0 px-2 py-1"
               >
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
                     <Avatar
                       name={u.displayName}
                       avatarUrl={u.avatarUrl ?? null}
-                      size={20}
+                      size={22}
                     />
                     <span className="font-medium">{u.displayName}</span>
                   </div>
                   <button
                     className="p-1 text-gray-400 hover:text-blue-500"
-                    title={`Message ${u.displayName}`}
+                    title={`Message {u.displayName}`}
                     onClick={() => openDM(u.id)}
                   >
                     <MessageCircle size={16} />

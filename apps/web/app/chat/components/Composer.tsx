@@ -1,5 +1,6 @@
 "use client";
 import React, { useMemo, useState, useRef } from "react";
+import { Paperclip, X } from "lucide-react";
 
 type ReplyTarget = {
   id: string;
@@ -127,7 +128,7 @@ export function Composer({
   }
 
   return (
-    <div className="border-t bg-white">
+    <div className="border-t bg-neutral-200">
       {/* Reply bar above the input */}
       {replyTo && (
         <div className="px-3 pt-2 pb-1 text-xs text-gray-600 flex items-start gap-2 border-b">
@@ -146,7 +147,7 @@ export function Composer({
               onClick={onCancelReply}
               aria-label="Cancel reply"
             >
-              ✕
+              <X size={14} className="text-gray-500" />
             </button>
           )}
         </div>
@@ -195,7 +196,7 @@ export function Composer({
           className="h-9 w-9 flex items-center justify-center rounded-full border bg-white hover:bg-gray-50 text-gray-600"
           title="Attach files"
         >
-          📎
+          <Paperclip size={18} strokeWidth={2} />
         </button>
 
         <div className="relative flex-1">

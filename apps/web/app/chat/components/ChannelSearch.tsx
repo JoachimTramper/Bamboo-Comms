@@ -80,8 +80,8 @@ export function ChannelSearch({
   }, []);
 
   return (
-    <div ref={containerRef} className="mb-4">
-      <form onSubmit={handleSubmit} className="flex gap-2 mb-2">
+    <div ref={containerRef}>
+      <form onSubmit={handleSubmit} className="flex gap-2">
         <input
           className="flex-1 border rounded px-2 py-1 text-sm"
           value={query}

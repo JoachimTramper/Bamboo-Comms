@@ -56,6 +56,7 @@ export function MessageItem({
 
   const [menuOpen, setMenuOpen] = useState(false);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isDmMine = isDirect && isMe;
 
   const openMenu = () => {
     if (isDeleted) return;
@@ -96,7 +97,9 @@ export function MessageItem({
 
   return (
     <div
-      className="group flex gap-3 px-2 py-2 rounded-md hover:bg-gray-50"
+      className={`group flex gap-3 px-2 py-px rounded-md hover:bg-gray-50 ${
+        isDmMine ? "flex-row-reverse" : ""
+      }`}
       onContextMenu={handleContextMenu}
       onPointerDown={handlePointerDown}
       onPointerUp={handlePointerUp}
@@ -110,7 +113,11 @@ export function MessageItem({
 
       <div className="flex-1 min-w-0">
         {/* header line */}
-        <div className="text-xs text-gray-500 flex items-center gap-2 flex-wrap">
+        <div
+          className={`text-xs text-gray-500 flex items-center gap-2 flex-wrap ${
+            isDmMine ? "justify-end" : ""
+          }`}
+        >
           <span className="font-medium text-gray-700">
             {m.author.displayName}
           </span>
@@ -182,9 +189,20 @@ export function MessageItem({
         ) : (
           <>
             {/* ROW: message + ticks */}
-            <div className="mt-1 flex items-end gap-2">
-              <div className="text-sm whitespace-pre-wrap flex-1">
-                {m.content}
+            <div
+              className={`flex items-end gap-2 ${
+                isDmMine ? "justify-end" : ""
+              }`}
+            >
+              <div className="max-w-[80%]">
+                <div
+                  className={`
+        inline-flex items-center max-w-full text-sm whitespace-pre-wrap px-3 py-2 rounded-2xl
+        ${isMe ? "bg-gray-100" : "bg-white border border-gray-200"}
+      `}
+                >
+                  {m.content}
+                </div>
               </div>
 
               {/* Sent/Seen right aligned, DM only */}
@@ -200,7 +218,12 @@ export function MessageItem({
 
             {/* Attachments */}
             {!isDeleted && m.attachments && m.attachments.length > 0 && (
-              <div className="mt-2 flex flex-col gap-1">
+              <div
+                className={`
+      mt-2 flex flex-col gap-1
+      ${isDmMine ? "items-end" : ""}
+    `}
+              >
                 {m.attachments.map((att) => {
                   const isImage = att.mimeType.startsWith("image/");
                   const url = resolveFileUrl(att.url);
@@ -228,7 +251,10 @@ export function MessageItem({
                           href={url}
                           target="_blank"
                           rel="noreferrer"
-                          className="inline-flex items-center gap-2 px-2 py-1 border rounded-md hover:bg-gray-50"
+                          className={`
+    inline-flex items-center gap-2 px-2 py-1 border rounded-md hover:bg-gray-50
+    ${isDmMine ? "justify-end text-right" : ""}
+  `}
                         >
                           <span className="text-[11px] font-medium truncate max-w-40">
                             {att.fileName}

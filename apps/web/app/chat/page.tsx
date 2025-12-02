@@ -42,6 +42,7 @@ import {
   mergeChannelsById,
   type MentionCandidate,
 } from "./utils/utils";
+import { X } from "lucide-react";
 
 type ReplyTarget = {
   id: string;
@@ -66,6 +67,7 @@ export default function ChatPage() {
   const [scrollToMessageId, setScrollToMessageId] = useState<string | null>(
     null
   );
+  const [searchOpen, setSearchOpen] = useState(false);
 
   // auth guard
   useEffect(() => {
@@ -436,7 +438,7 @@ export default function ChatPage() {
         ];
 
   return (
-    <div className="h-dvh overflow-hidden flex flex-col">
+    <div className="fixed inset-0 overflow-hidden flex flex-col bg-neutral-100">
       {/* header + avatar button */}
       <ChatHeader
         user={user}
@@ -449,17 +451,9 @@ export default function ChatPage() {
         sidebarOpen={sidebarOpen}
         setSidebarOpen={setSidebarOpen}
         dmPeer={dmPeer}
+        onEnableNotifications={() => ensureNotificationPermission()}
+        onOpenSearch={() => setSearchOpen(true)}
       />
-
-      {/* Enable notifications button */}
-      <div className="px-3 py-2 border-b bg-white">
-        <button
-          onClick={() => ensureNotificationPermission()}
-          className="text-xs text-blue-600 underline"
-        >
-          Enable notifications
-        </button>
-      </div>
 
       {/* main layout */}
       <div className="flex-1 min-h-0 flex">
@@ -474,8 +468,8 @@ export default function ChatPage() {
         {/* Sidebar */}
         <div
           className={`
-    ${sidebarOpen ? "fixed inset-y-0 left-0 z-20 w-64 bg-white block" : "hidden"}
-    md:static md:block md:w-72 md:border-r
+    ${sidebarOpen ? "fixed inset-y-0 left-0 z-20 w-64 bg-neutral-200 block" : "hidden"}
+    md:static md:block md:w-72 md:border-r md:bg-neutral-200 md:h-full
   `}
         >
           <Sidebar
@@ -499,19 +493,7 @@ export default function ChatPage() {
         </div>
 
         {/* Main */}
-        <main className="flex-1 grid grid-rows-[auto_1fr_auto] min-h-0">
-          {/* Search bar */}
-          <div className="px-3 md:px-4 py-2 border-b bg-white">
-            {active && (
-              <ChannelSearch
-                channelId={active}
-                onJumpToMessage={(messageId) => {
-                  setScrollToMessageId(messageId);
-                }}
-              />
-            )}
-          </div>
-
+        <main className="flex-1 flex flex-col min-h-0">
           {/* Messages */}
           <MessageList
             msgs={msgs}
@@ -552,6 +534,45 @@ export default function ChatPage() {
           />
         </main>
       </div>
+      {searchOpen && active && (
+        <div
+          className="fixed inset-0 z-30 flex items-start justify-center pt-20 bg-black/60 backdrop-blur-sm"
+          onClick={() => setSearchOpen(false)}
+        >
+          <div
+            className="w-full max-w-xl mx-4 rounded-lg bg-white shadow-xl border overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between px-3 py-2 border-b bg-gray-50">
+              <div className="text-xs font-medium text-gray-500 truncate">
+                Search in{" "}
+                {activeChannel?.isDirect
+                  ? (dmPeer?.displayName ?? "this conversation")
+                  : `#${activeChannel?.name ?? "channel"}`}
+              </div>
+              <button
+                type="button"
+                className="text-xs text-gray-500 hover:text-gray-800"
+                onClick={() => setSearchOpen(false)}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="p-3 max-h-[70vh] overflow-y-auto">
+              <ChannelSearch
+                channelId={active}
+                onJumpToMessage={(messageId) => {
+                  setSearchOpen(false);
+                  setScrollToMessageId(messageId);
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

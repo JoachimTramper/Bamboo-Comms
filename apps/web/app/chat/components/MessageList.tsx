@@ -117,49 +117,57 @@ export function MessageList({
     <div
       ref={listRef}
       onScroll={onScroll}
-      className="flex-1 overflow-auto p-4 space-y-3"
+      className="flex-1 overflow-auto py-4"
     >
-      {safeMsgs.map((m, index) => {
-        // only the last own message before the other has read
-        const showSeen = isDirect && index === lastMySeenIndex;
+      <div
+        className={
+          isDirect
+            ? // DM's: fluid padding – grows with viewport, but never full-screen edge-to-edge
+              "w-full space-y-1 px-3 sm:px-6 lg:px-[10vw] xl:px-[15vw]"
+            : // Channels: light fixed padding
+              "w-full space-y-1 px-3 sm:px-4 lg:px-6"
+        }
+      >
+        {safeMsgs.map((m, index) => {
+          const showSeen = isDirect && index === lastMySeenIndex;
+          const isLastOwn =
+            isDirect && m.authorId === meId && index === lastMyIndex;
+          const isHighlighted = highlightedId === m.id;
 
-        // Last own message (for "Sent")
-        const isLastOwn =
-          isDirect && m.authorId === meId && index === lastMyIndex;
-
-        const isHighlighted = highlightedId === m.id;
-
-        return (
-          <div
-            key={m.id}
-            ref={(el) => {
-              messageRefs.current[m.id] = el;
-            }}
-            className={
-              isHighlighted ? "ring-2 ring-blue-400 bg-blue-50 rounded-md" : ""
-            }
-          >
-            <MessageItem
-              m={m}
-              meId={meId}
-              channelId={channelId}
-              isMe={m.authorId === meId}
-              isDirect={isDirect}
-              isEditing={editingId === m.id}
-              onStartEdit={() => onStartEdit(m)}
-              onSaveEdit={() => onSaveEdit(m)}
-              onCancelEdit={onCancelEdit}
-              onDelete={() => onDelete(m)}
-              onReply={() => onReply(m)}
-              editText={editText}
-              setEditText={setEditText}
-              formatDateTime={formatDateTime}
-              showSeen={showSeen}
-              isLastOwn={isLastOwn}
-            />
-          </div>
-        );
-      })}
+          return (
+            <div
+              key={m.id}
+              ref={(el) => {
+                messageRefs.current[m.id] = el;
+              }}
+              className={
+                isHighlighted
+                  ? "ring-2 ring-blue-400 bg-blue-50 rounded-md"
+                  : ""
+              }
+            >
+              <MessageItem
+                m={m}
+                meId={meId}
+                channelId={channelId}
+                isMe={m.authorId === meId}
+                isDirect={isDirect}
+                isEditing={editingId === m.id}
+                onStartEdit={() => onStartEdit(m)}
+                onSaveEdit={() => onSaveEdit(m)}
+                onCancelEdit={onCancelEdit}
+                onDelete={() => onDelete(m)}
+                onReply={() => onReply(m)}
+                editText={editText}
+                setEditText={setEditText}
+                formatDateTime={formatDateTime}
+                showSeen={showSeen}
+                isLastOwn={isLastOwn}
+              />
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
