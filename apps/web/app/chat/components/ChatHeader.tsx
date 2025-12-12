@@ -61,6 +61,12 @@ export function ChatHeader({
         isIdle: false,
       };
 
+  const myStatusLabel = myStatus.isOnline
+    ? myStatus.isIdle
+      ? "Idle"
+      : "Online"
+    : "Offline";
+
   function toggleMenu() {
     setMenuOpen((v) => !v);
   }
@@ -108,71 +114,83 @@ export function ChatHeader({
   }, [menuOpen]);
 
   return (
-    <header className="border-b bg-neutral-200 px-3 md:px-4 py-2 flex items-center justify-between">
-      {/* Left side: channel / DM info */}
-      <div className="flex items-center gap-2 text-base font-semibold min-w-0">
+    <header className="relative z-40 border-b border-neutral-300 md:border-b-0 bg-neutral-200 backdrop-blur-sm px-3 sm:px-4 py-2 flex items-center">
+      {/* Left side: menu + (later logo) */}
+      <div className="flex items-center gap-2 min-w-0">
         {/* mobile menu-button */}
         <button
           type="button"
-          className="md:hidden mr-1 h-8 w-8 flex items-center justify-center rounded hover:bg-gray-100"
+          className="md:hidden mr-1 h-8 w-8 flex items-center justify-center rounded hover:bg-neutral-100"
           onClick={() => setSidebarOpen(!sidebarOpen)}
           aria-label="Toggle sidebar"
         >
-          <Menu size={20} className="text-gray-700" />
+          <Menu size={20} className="text-neutral-700" />
         </button>
 
+        {/* hier later je logo */}
+      </div>
+
+      {/* Centered title (channel or DM) */}
+      <div
+        className="
+        absolute left-1/2 -translate-x-1/2
+        flex items-center gap-2
+        min-w-0 max-w-[62%] sm:max-w-[55%]
+        pointer-events-none
+        z-0
+      "
+      >
         {activeChannel?.isDirect && dmPeer ? (
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="relative">
+          <>
+            <div className="relative shrink-0">
               <Avatar
                 name={dmPeer.displayName}
                 avatarUrl={dmPeer.avatarUrl}
-                size={32}
+                size={28}
               />
               <span
-                className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border border-white ${
+                className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border border-neutral-200 ${
                   dmPeer.isOnline
                     ? dmPeer.isIdle
                       ? "bg-yellow-400"
                       : "bg-green-500"
-                    : "bg-gray-300"
+                    : "bg-neutral-300"
                 }`}
               />
             </div>
 
-            <div className="min-w-0">
-              <div className="font-semibold truncate">{dmPeer.displayName}</div>
-              <div className="text-xs text-gray-500 truncate">
+            <div className="min-w-0 leading-tight text-center">
+              <div className="text-sm font-semibold truncate text-neutral-900">
+                {dmPeer.displayName}
+              </div>
+              <div className="text-[11px] text-neutral-500 truncate">
                 {dmPeer.statusText}
               </div>
             </div>
-          </div>
-        ) : (
-          <>
-            <span aria-hidden className="hidden sm:inline">
-              #
-            </span>
-            <span className="truncate max-w-[60vw] md:max-w-none">
-              {activeChannel?.name ?? "Chat"}
-            </span>
           </>
+        ) : (
+          <div className="min-w-0 text-center">
+            <div className="text-sm font-semibold truncate text-neutral-900">
+              #{activeChannel?.name ?? "Chat"}
+            </div>
+          </div>
         )}
       </div>
 
       {/* Right side: search + avatar + dropdown */}
-      <div className="flex items-center gap-2">
+      <div className="relative z-10 ml-auto flex items-center gap-2">
         {/* search icon button */}
         <button
           type="button"
           onClick={onOpenSearch}
-          className="inline-flex h-8 w-8 items-center justify-center rounded-full hover:bg-gray-100 text-gray-600"
+          className="inline-flex h-8 w-8 items-center justify-center rounded-full hover:bg-neutral-100 text-neutral-600"
           aria-label="Search"
         >
           <Search size={18} strokeWidth={2} />
         </button>
 
         {/* Avatar + dropdown */}
-        <div className="relative flex items-center">
+        <div ref={menuRef} className="relative flex items-center">
           {/* hidden file input for avatar upload */}
           <input
             ref={fileInputRef}
@@ -184,7 +202,7 @@ export function ChatHeader({
 
           <button
             type="button"
-            className="flex items-center gap-2 rounded-full px-2 py-1 hover:bg-gray-100"
+            className="flex items-center gap-2 rounded-full px-2 py-1 hover:bg-neutral-100"
             onClick={toggleMenu}
             disabled={avatarUploading}
           >
@@ -194,43 +212,45 @@ export function ChatHeader({
                 avatarUrl={user.avatarUrl}
                 size={28}
               />
-
-              {/* statusdot for yourself */}
+              {/* status dot for yourself */}
               <span
                 className={`
-        absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border border-white
-        ${
-          myStatus.isOnline
-            ? myStatus.isIdle
-              ? "bg-yellow-400"
-              : "bg-green-500"
-            : "bg-gray-300"
-        }
-      `}
+                absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border border-white
+                ${
+                  myStatus.isOnline
+                    ? myStatus.isIdle
+                      ? "bg-yellow-400"
+                      : "bg-green-500"
+                    : "bg-neutral-300"
+                }
+              `}
               />
             </div>
 
-            <span className="hidden sm:inline text-sm text-gray-700">
-              {avatarUploading ? "Uploading..." : user.displayName}
-            </span>
+            {/* name + status (only visible on >= sm) */}
+            <div className="hidden sm:flex flex-col leading-tight">
+              <span className="text-sm text-neutral-700 font-medium truncate max-w-[120px]">
+                {avatarUploading ? "Uploading..." : user.displayName}
+              </span>
+              <span className="text-xs text-neutral-500">{myStatusLabel}</span>
+            </div>
 
-            <ChevronDown size={16} className="text-gray-500" />
+            <ChevronDown size={16} className="text-neutral-500" />
           </button>
 
           {menuOpen && (
-            <div
-              ref={menuRef}
-              className="absolute right-0 top-full mt-2 w-56 rounded-md border bg-white shadow-md text-sm z-20"
-            >
-              <div className="px-3 py-2 border-b">
-                <div className="text-xs text-gray-500">Signed in as</div>
-                <div className="font-medium truncate">{user.displayName}</div>
+            <div className="absolute right-0 top-full mt-2 w-56 rounded-md border border-neutral-200 bg-white shadow-md text-sm z-50">
+              <div className="px-3 py-2 border-b border-neutral-200">
+                <div className="text-xs text-neutral-500">Signed in as</div>
+                <div className="font-medium truncate text-neutral-900">
+                  {user.displayName}
+                </div>
               </div>
 
               <button
                 type="button"
                 onClick={handleChangeAvatar}
-                className="w-full text-left px-3 py-2 hover:bg-gray-50 text-xs text-gray-700"
+                className="w-full text-left px-3 py-2 hover:bg-neutral-50 text-xs text-neutral-700"
               >
                 Change avatar
               </button>
@@ -238,7 +258,7 @@ export function ChatHeader({
               <button
                 type="button"
                 onClick={handleRemoveAvatar}
-                className="w-full text-left px-3 py-2 hover:bg-gray-50 text-xs text-gray-600"
+                className="w-full text-left px-3 py-2 hover:bg-neutral-50 text-xs text-neutral-600"
               >
                 Remove avatar
               </button>
@@ -246,7 +266,7 @@ export function ChatHeader({
               <button
                 type="button"
                 onClick={handleEnableNotificationsClick}
-                className="w-full text-left px-3 py-2 hover:bg-gray-50 text-xs text-gray-700"
+                className="w-full text-left px-3 py-2 hover:bg-neutral-50 text-xs text-neutral-700"
               >
                 Enable notifications
               </button>
@@ -254,7 +274,7 @@ export function ChatHeader({
               <button
                 type="button"
                 onClick={handleLogoutClick}
-                className="w-full text-left px-3 py-2 hover:bg-red-50 text-xs text-red-600 border-t"
+                className="w-full text-left px-3 py-2 hover:bg-red-50 text-xs text-red-600 border-t border-neutral-200"
               >
                 Logout
               </button>

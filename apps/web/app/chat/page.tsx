@@ -68,6 +68,9 @@ export default function ChatPage() {
     null
   );
   const [searchOpen, setSearchOpen] = useState(false);
+  const swipeStartX = useRef<number | null>(null);
+  const swipeCurrentX = useRef<number | null>(null);
+  const swipeSidebarWasOpen = useRef(false);
 
   // auth guard
   useEffect(() => {
@@ -99,6 +102,91 @@ export default function ChatPage() {
     })();
   }, []);
 
+  // body scroll lock when sidebar open (mobile)
+  useEffect(() => {
+    if (sidebarOpen) {
+      // body scroll lock
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
+
+    return () => {
+      // cleanup on unmount
+      document.body.style.overflow = "";
+    };
+  }, [sidebarOpen]);
+
+  // swipe open/close sidebar (mobile)
+  useEffect(() => {
+    function handleTouchStart(e: TouchEvent) {
+      const t = e.touches[0];
+      if (!t) return;
+
+      swipeStartX.current = t.clientX;
+      swipeCurrentX.current = t.clientX;
+      swipeSidebarWasOpen.current = sidebarOpen;
+    }
+
+    function handleTouchMove(e: TouchEvent) {
+      if (swipeStartX.current == null) return;
+      const t = e.touches[0];
+      if (!t) return;
+
+      swipeCurrentX.current = t.clientX;
+    }
+
+    function handleTouchEnd() {
+      if (swipeStartX.current == null || swipeCurrentX.current == null) {
+        swipeStartX.current = null;
+        swipeCurrentX.current = null;
+        return;
+      }
+
+      const startX = swipeStartX.current;
+      const deltaX = swipeCurrentX.current - swipeStartX.current;
+      const THRESHOLD = 60;
+
+      if (!swipeSidebarWasOpen.current) {
+        // sidebar was dicht → vanuit linkerrand naar rechts swipen
+        if (startX <= 24 && deltaX > THRESHOLD) {
+          setSidebarOpen(true);
+        }
+      } else {
+        // sidebar was open → naar links swipen om te sluiten
+        if (deltaX < -THRESHOLD) {
+          setSidebarOpen(false);
+        }
+      }
+
+      swipeStartX.current = null;
+      swipeCurrentX.current = null;
+    }
+
+    window.addEventListener("touchstart", handleTouchStart);
+    window.addEventListener("touchmove", handleTouchMove);
+    window.addEventListener("touchend", handleTouchEnd);
+
+    return () => {
+      window.removeEventListener("touchstart", handleTouchStart);
+      window.removeEventListener("touchmove", handleTouchMove);
+      window.removeEventListener("touchend", handleTouchEnd);
+    };
+  }, [sidebarOpen]);
+
+  useEffect(() => {
+    if (!searchOpen) return;
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setSearchOpen(false);
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [searchOpen]);
+
   // hooks
   const {
     msgs,
@@ -110,6 +198,7 @@ export default function ChatPage() {
     loadingOlder,
     hasMore,
     lastReadMessageIdByOthers,
+    retrySend,
   } = useMessages(active, user?.sub, {
     resolveDisplayName,
     onIncomingMessage: (msg) => {
@@ -188,6 +277,20 @@ export default function ChatPage() {
       }
     })();
   }, [user]);
+
+  // keep bottom in view when viewport changes (e.g. mobile keyboard opens)
+  useEffect(() => {
+    const handleResize = () => {
+      const el = listRef.current;
+      if (!el) return;
+
+      // scroll naar onder wanneer de viewport verandert
+      el.scrollTop = el.scrollHeight;
+    };
+
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, [listRef]);
 
   // helpers
   const canSend = useMemo(
@@ -316,6 +419,21 @@ export default function ChatPage() {
     }
   }
 
+  function TypingIndicator({ label }: { label: string | null }) {
+    if (!label) return null;
+
+    return (
+      <div className="px-3 md:px-4 py-2 bg-white border-t flex items-center gap-2">
+        <div className="flex items-center gap-1">
+          <span className="w-2 h-2 bg-gray-400 rounded-full animate-typingDot1"></span>
+          <span className="w-2 h-2 bg-gray-400 rounded-full animate-typingDot2"></span>
+          <span className="w-2 h-2 bg-gray-400 rounded-full animate-typingDot3"></span>
+        </div>
+        <span className="text-xs text-gray-600">{label}</span>
+      </div>
+    );
+  }
+
   async function openDM(otherUserId: string) {
     try {
       const dm = await getOrCreateDirectChannel(otherUserId);
@@ -438,7 +556,7 @@ export default function ChatPage() {
         ];
 
   return (
-    <div className="fixed inset-0 overflow-hidden flex flex-col bg-neutral-100">
+    <div className="fixed inset-0 overflow-hidden flex flex-col">
       {/* header + avatar button */}
       <ChatHeader
         user={user}
@@ -454,23 +572,25 @@ export default function ChatPage() {
         onEnableNotifications={() => ensureNotificationPermission()}
         onOpenSearch={() => setSearchOpen(true)}
       />
-
       {/* main layout */}
-      <div className="flex-1 min-h-0 flex">
+      <div className="flex-1 min-h-0 flex relative md:bg-neutral-200">
         {/* Mobile backdrop */}
         {sidebarOpen && (
           <div
+            className="fixed inset-0 bg-black/30 z-40 md:hidden"
             onClick={() => setSidebarOpen(false)}
-            className="fixed inset-0 bg-black/30 z-10 md:hidden"
           />
         )}
 
         {/* Sidebar */}
         <div
           className={`
-    ${sidebarOpen ? "fixed inset-y-0 left-0 z-20 w-64 bg-neutral-200 block" : "hidden"}
-    md:static md:block md:w-72 md:border-r md:bg-neutral-200 md:h-full
-  `}
+            fixed inset-y-0 left-0 z-50 w-64 bg-neutral-200
+            transform transition-transform duration-200 ease-out
+            ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}
+            md:static md:translate-x-0 md:w-72 md:bg-neutral-200 md:h-full md:block
+            border-r border-neutral-300/50 md:border-r-0
+          `}
         >
           <Sidebar
             regularChannels={regularChannels}
@@ -493,54 +613,68 @@ export default function ChatPage() {
         </div>
 
         {/* Main */}
-        <main className="flex-1 flex flex-col min-h-0">
+        <main
+          className="
+            flex-1 flex flex-col min-h-0
+            bg-[url('/BackgroundMessages.png')]
+            bg-repeat
+            bg-[length:350px_350px]
+
+            md:rounded-tl-2xl
+            md:border md:border-neutral-300
+            md:overflow-hidden
+            md:relative md:z-10
+
+            md:shadow-[inset_0_1px_0_rgba(255,255,255,0.4)]
+          "
+        >
           {/* Messages */}
-          <MessageList
-            msgs={msgs}
-            meId={user.sub}
-            channelId={active!}
-            listRef={listRef}
-            editingId={editingId}
-            editText={editText}
-            setEditText={setEditText}
-            onStartEdit={(m) => startEdit(m)}
-            onSaveEdit={(m) => active && saveEdit(active, m.id)}
-            onCancelEdit={cancelEdit}
-            onDelete={(m) => active && removeMessage(active, m.id)}
-            onReply={(m) => handleReply(m)}
-            formatDateTime={formatDateTime}
-            onScroll={handleScroll}
-            isDirect={activeChannel?.isDirect ?? false}
-            lastReadMessageIdByOthers={lastReadMessageIdByOthers}
-            scrollToMessageId={scrollToMessageId}
-            onScrolledToMessage={() => setScrollToMessageId(null)}
-          />
+          <div className="flex-1 min-h-0 flex flex-col">
+            <MessageList
+              msgs={msgs}
+              meId={user.sub}
+              channelId={active!}
+              listRef={listRef}
+              editingId={editingId}
+              editText={editText}
+              setEditText={setEditText}
+              onStartEdit={(m) => startEdit(m)}
+              onSaveEdit={(m) => active && saveEdit(active, m.id)}
+              onCancelEdit={cancelEdit}
+              onDelete={(m) => active && removeMessage(active, m.id)}
+              onReply={(m) => handleReply(m)}
+              formatDateTime={formatDateTime}
+              onScroll={handleScroll}
+              isDirect={activeChannel?.isDirect ?? false}
+              lastReadMessageIdByOthers={lastReadMessageIdByOthers}
+              scrollToMessageId={scrollToMessageId}
+              onScrolledToMessage={() => setScrollToMessageId(null)}
+              loadingOlder={loadingOlder}
+              onRetrySend={retrySend}
+            />
+          </div>
 
-          {/* Typing indicator */}
-          {typingLabel && (
-            <div className="px-3 md:px-4 py-1 text-sm text-gray-600 shrink-0 bg-white border-t">
-              {typingLabel}
-            </div>
-          )}
-
-          {/* Composer */}
-          <Composer
-            value={text}
-            onChange={handleTypingInput}
-            onSend={handleSend}
-            replyTo={replyTo}
-            onCancelReply={() => setReplyTo(null)}
-            mentionCandidates={mentionCandidates}
-          />
+          {/* Sticky footer: typing + composer */}
+          <div className="sticky bottom-0 z-20">
+            <TypingIndicator label={typingLabel} />
+            <Composer
+              value={text}
+              onChange={handleTypingInput}
+              onSend={handleSend}
+              replyTo={replyTo}
+              onCancelReply={() => setReplyTo(null)}
+              mentionCandidates={mentionCandidates}
+            />
+          </div>
         </main>
       </div>
       {searchOpen && active && (
         <div
-          className="fixed inset-0 z-30 flex items-start justify-center pt-20 bg-black/60 backdrop-blur-sm"
+          className="fixed inset-0 z-30 flex items-center justify-center bg-black/60 backdrop-blur-sm px-3"
           onClick={() => setSearchOpen(false)}
         >
           <div
-            className="w-full max-w-xl mx-4 rounded-lg bg-white shadow-xl border overflow-hidden"
+            className="w-full max-w-xl rounded-lg bg-neutral-200 shadow-xl border overflow-hidden search-modal"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}

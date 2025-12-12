@@ -59,17 +59,17 @@ export function Sidebar({
         return "bg-yellow-400";
       case "offline":
       default:
-        return "bg-gray-300";
+        return "bg-neutral-300";
     }
   }
 
   return (
-    <aside className="border-r p-3 overflow-auto min-h-0 bg-neutral-200">
+    <aside className="p-3 overflow-auto min-h-0">
       {/* Channels + DMs */}
       <div className="space-y-3">
         {/* Channels */}
         <section>
-          <h2 className="font-semibold text-xs uppercase tracking-wide text-gray-500">
+          <h2 className="font-semibold text-xs uppercase tracking-wide text-neutral-500">
             Channels
           </h2>
           <form
@@ -80,15 +80,27 @@ export function Sidebar({
             className="mt-2 flex gap-2"
           >
             <input
-              className="border rounded flex-1 px-2 py-1 text-sm"
+              className="flex-1 px-2 py-1 text-sm rounded-lg border border-neutral-300 bg-white
+                         text-neutral-900 placeholder:text-neutral-500
+                         disabled:bg-neutral-100 disabled:text-neutral-400
+                         focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500 outline-none"
               placeholder="New channel…"
               value={newChannel}
               onChange={(e) => setNewChannel(e.target.value)}
               disabled={creating}
             />
             <button
-              className="border rounded px-3 text-sm hover:bg-gray-50 disabled:opacity-50"
+              className="
+                px-3 py-1.5 text-sm rounded-lg
+                bg-indigo-600 text-white font-medium
+                shadow-lg hover:shadow-xl
+                border border-transparent
+                transition-colors transition-shadow
+                focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2
+                disabled:opacity-70 disabled:cursor-not-allowed
+              "
               disabled={creating || !newChannel.trim()}
+              type="submit"
             >
               Add
             </button>
@@ -99,23 +111,24 @@ export function Sidebar({
               <button
                 key={c.id}
                 onClick={() => setActive(c.id)}
-                className={`flex items-center justify-between w-full text-left px-2 py-1 rounded text-sm border
+                className={`flex items-center justify-between w-full text-left px-2 py-1 rounded-lg text-sm border
+                            transition-all duration-150 hover:-translate-y-0.5 hover:shadow-md
                   ${
                     active === c.id
-                      ? "bg-blue-50 text-blue-700 border-blue-200 font-medium"
-                      : "hover:bg-gray-100 border-transparent"
+                      ? "bg-indigo-50 text-indigo-700 border-indigo-200 font-medium"
+                      : "hover:bg-neutral-100 border-transparent text-neutral-800"
                   }`}
               >
                 <span>#{c.name}</span>
                 {(c.unread ?? 0) > 0 && (
-                  <span className="ml-auto inline-flex items-center justify-center rounded-full bg-blue-500 text-white text-[10px] font-semibold min-w-4 h-4 px-[5px] leading-none shadow-sm">
+                  <span className="ml-auto inline-flex items-center justify-center rounded-full bg-indigo-500 text-white text-[10px] font-semibold min-w-[1rem] h-4 px-[5px] leading-none shadow-sm">
                     {c.unread}
                   </span>
                 )}
               </button>
             ))}
             {regularChannels.length === 0 && (
-              <div className="text-sm text-gray-500 mt-1 px-2">
+              <div className="text-sm text-neutral-500 mt-1 px-2">
                 No channels yet
               </div>
             )}
@@ -124,27 +137,32 @@ export function Sidebar({
 
         {/* Direct Messages */}
         <section>
-          <h3 className="font-semibold text-xs uppercase tracking-wide text-gray-500">
+          <h3
+            className="
+          font-semibold text-xs uppercase tracking-wide text-neutral-500
+          transition-all duration-150 hover:-translate-y-0.5 hover:shadow-md
+          "
+          >
             Direct Messages
           </h3>
           <div className="mt-2 space-y-1">
             {dmChannels.length === 0 ? (
-              <div className="text-sm text-gray-500 px-2">No DMs yet</div>
+              <div className="text-sm text-neutral-500 px-2">No DMs yet</div>
             ) : (
               dmChannels.map((c) => {
-                // Andere persoon in het DM-kanaal (niet ikzelf)
+                // Other person in the DM channel (not myself)
                 let other =
                   c.members && c.members.length > 0
                     ? (c.members.find((m) => m.id !== meId) ?? c.members[0])
                     : undefined;
 
-                // 1) Presence eerst op id
+                // 1) Presence first by id
                 let presenceUser =
                   (other && othersOnline.find((u) => u.id === other.id)) ||
                   (other && recently.find((u) => u.id === other.id)) ||
                   null;
 
-                // 2) Zo niet, proberen op kanaalnaam (c.name)
+                // 2) If not, try by channel name (c.name)
                 if (!presenceUser) {
                   presenceUser =
                     othersOnline.find((u) => u.displayName === c.name) ||
@@ -152,17 +170,13 @@ export function Sidebar({
                     null;
                 }
 
-                // 3) Status bepalen:
-                //    - expliciet "idle"  → idle
-                //    - expliciet "online"→ online
-                //    - anders            → offline
+                // 3) Determine status
                 let status: PresenceStatus;
                 if (presenceUser?.status === "idle") {
                   status = "idle";
                 } else if (presenceUser?.status === "online") {
                   status = "online";
                 } else if (other) {
-                  // fallback op bestaande helper (gebruikt othersOnline/recently)
                   status = getUserStatus(other.id);
                 } else {
                   status = "offline";
@@ -170,7 +184,7 @@ export function Sidebar({
 
                 const dotClass = getStatusDotClass(status);
 
-                // 4) Naam + avatar-url bepalen met presence als eerste bron
+                // 4) Name + avatar-url
                 const displayName =
                   presenceUser?.displayName ?? other?.displayName ?? c.name;
 
@@ -183,12 +197,13 @@ export function Sidebar({
                   <button
                     key={c.id}
                     onClick={() => setActive(c.id)}
-                    className={`flex items-center justify-between w-full text-left px-2 py-1 rounded text-sm border
-              ${
-                active === c.id
-                  ? "bg-blue-50 text-blue-700 border-blue-200 font-medium"
-                  : "hover:bg-gray-100 border-transparent"
-              }`}
+                    className={`flex items-center justify-between w-full text-left px-2 py-1 rounded-lg text-sm border
+                                transition-all duration-150 hover:-translate-y-0.5 hover:shadow-md
+                      ${
+                        active === c.id
+                          ? "bg-indigo-50 text-indigo-700 border-indigo-200 font-medium"
+                          : "hover:bg-neutral-100 border-transparent text-neutral-800"
+                      }`}
                   >
                     <div className="flex items-center gap-2 min-w-0">
                       {hasKnownUser ? (
@@ -210,7 +225,7 @@ export function Sidebar({
                     </div>
 
                     {(c.unread ?? 0) > 0 && (
-                      <span className="ml-2 inline-flex items-center justify-center rounded-full bg-blue-500 text-white text-[10px] font-semibold min-w-4 h-4 px-[5px] leading-none shadow-sm">
+                      <span className="ml-2 inline-flex items-center justify-center rounded-full bg-indigo-500 text-white text-[10px] font-semibold min-w-[1rem] h-4 px-[5px] leading-none shadow-sm">
                         {c.unread}
                       </span>
                     )}
@@ -224,17 +239,19 @@ export function Sidebar({
 
       {/* Online */}
       <div className="mt-3">
-        <h3 className="font-semibold text-xs uppercase tracking-wide text-gray-500">
+        <h3 className="font-semibold text-xs uppercase tracking-wide text-neutral-500">
           Online ({othersOnline.length})
         </h3>
         <div className="mt-1 space-y-0.5">
           {othersOnline.length === 0 ? (
-            <div className="text-sm text-gray-500 px-2">No one else online</div>
+            <div className="text-sm text-neutral-500 px-2">
+              No one else online
+            </div>
           ) : (
             othersOnline.map((u) => (
               <div
                 key={u.id}
-                className="flex items-center gap-2 text-sm px-2 py-1"
+                className="flex items-center gap-2 text-sm px-2 py-1 text-neutral-800"
               >
                 <Avatar
                   name={u.displayName}
@@ -244,12 +261,12 @@ export function Sidebar({
                 <span className="flex items-center gap-2">
                   {u.displayName}
                   <button
-                    className="p-1 text-gray-500 hover:text-blue-500"
+                    className="p-1 hover:text-indigo-500 hover:bg-neutral-100 rounded-md"
                     onClick={() => openDM(u.id)}
                     title={`Message ${u.displayName}`}
                     aria-label={`Message ${u.displayName}`}
                   >
-                    <MessageCircle size={16} aria-hidden="true" />
+                    <MessageCircle size={16} className="text-black" />
                   </button>
                 </span>
               </div>
@@ -260,17 +277,19 @@ export function Sidebar({
 
       {/* Offline */}
       <div className="mt-3">
-        <h3 className="font-semibold text-xs uppercase tracking-wide text-gray-500">
+        <h3 className="font-semibold text-xs uppercase tracking-wide text-neutral-500">
           Offline ({recently.length})
         </h3>
         <div className="mt-1 space-y-0.5">
           {recently.length === 0 ? (
-            <div className="text-sm text-gray-500 px-2">No offline users</div>
+            <div className="text-sm text-neutral-500 px-2">
+              No offline users
+            </div>
           ) : (
             recently.map((u) => (
               <div
                 key={u.id}
-                className="text-sm border-b border-gray-100 pb-1 last:border-0 px-2 py-1"
+                className="text-sm border-b border-neutral-200 pb-1 last:border-0 px-2 py-1"
               >
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
@@ -279,17 +298,19 @@ export function Sidebar({
                       avatarUrl={u.avatarUrl ?? null}
                       size={22}
                     />
-                    <span className="font-medium">{u.displayName}</span>
+                    <span className="font-medium text-neutral-800">
+                      {u.displayName}
+                    </span>
                   </div>
                   <button
-                    className="p-1 text-gray-400 hover:text-blue-500"
-                    title={`Message {u.displayName}`}
+                    className="p-1 hover:text-indigo-500"
+                    title={`Message ${u.displayName}`}
                     onClick={() => openDM(u.id)}
                   >
-                    <MessageCircle size={16} />
+                    <MessageCircle size={16} className="text-black" />
                   </button>
                 </div>
-                <div className="ml-8 text-xs text-gray-500">
+                <div className="ml-8 text-xs text-neutral-500">
                   {formatLastOnline(u.lastSeen)}
                 </div>
               </div>

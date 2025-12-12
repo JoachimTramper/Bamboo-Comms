@@ -63,6 +63,8 @@ export type Message = {
   parent?: MessageParent | null;
   mentions?: MessageMention[];
   attachments?: MessageAttachment[];
+  pending?: boolean;
+  failed?: boolean;
 };
 
 import type { MeResponse } from "@/lib/api";

@@ -48,6 +48,7 @@ export function useMessages(
     onIncomingRef.current = opts?.onIncomingMessage;
   }, [opts?.onIncomingMessage]);
 
+  // initial load
   useEffect(() => {
     if (!ready) return;
 
@@ -246,7 +247,6 @@ export function useMessages(
     };
 
     const onReactionAdded = (p: any) => {
-      // payload: { messageId, channelId, emoji, userId }
       if (p.channelId !== active) return;
 
       setMsgs((prev) =>
@@ -286,7 +286,6 @@ export function useMessages(
 
     const onRead = (p: any) => {
       if (p.channelId !== active) return;
-
       if (p.userId === userIdRef.current) return;
 
       if (p.messageId) {
@@ -319,17 +318,14 @@ export function useMessages(
     const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 64;
 
     if (nearBottom) {
-      // scroll till bottom
-      el.scrollTop = el.scrollHeight;
-
-      // and immediately notify the server that we've seen everything
+      el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
       markChannelRead(active).catch((err) => {
         console.error("Failed to mark channel read:", err);
       });
     }
   }, [msgs, ready, active]);
 
-  // actions with optimistic UI
+  // SEND + failed fallback
   const send = async (
     text?: string,
     replyToMessageId?: string,
@@ -341,14 +337,76 @@ export function useMessages(
       size: number;
     }> = []
   ) => {
-    if (!active) return;
+    if (!active || !userIdRef.current) return;
 
-    await sendMessage(
-      active,
-      text,
-      replyToMessageId,
-      mentionUserIds,
-      attachments
+    try {
+      await sendMessage(
+        active,
+        text,
+        replyToMessageId,
+        mentionUserIds,
+        attachments
+      );
+    } catch (err) {
+      console.error("Failed to send message:", err);
+
+      const failedId = `local-failed-${Date.now()}-${Math.random()
+        .toString(36)
+        .slice(2)}`;
+
+      const displayName = resolveNameRef.current?.(userIdRef.current) ?? "You";
+
+      const failedMessage: Message = {
+        id: failedId,
+        channelId: active,
+        content: text ?? "(no content)",
+        authorId: userIdRef.current,
+        createdAt: new Date().toISOString(),
+        updatedAt: undefined,
+        deletedAt: null,
+        deletedBy: null,
+        author: {
+          id: userIdRef.current,
+          displayName,
+          avatarUrl: null,
+        },
+        reactions: [],
+        parent: undefined,
+        mentions: [],
+        attachments: attachments.map((a, idx) => ({
+          id: `local-attach-${idx}`,
+          url: a.url,
+          fileName: a.fileName,
+          mimeType: a.mimeType,
+          size: a.size,
+        })),
+        failed: true,
+        pending: false,
+      };
+
+      setMsgs((prev) => [...prev, failedMessage]);
+    }
+  };
+
+  // RETRY for failed messages
+  const retrySend = async (failedMessageId: string) => {
+    const failed = msgs.find((m) => m.id === failedMessageId && m.failed);
+    if (!failed || !active || !userIdRef.current) return;
+
+    // remove the failed bubble
+    setMsgs((prev) => prev.filter((m) => m.id !== failedMessageId));
+
+    // resend with original payload
+    await send(
+      failed.content ?? undefined,
+      failed.parent?.id,
+      failed.mentions?.map((mm: any) => mm.userId) ?? [],
+      (failed.attachments ?? []).map((a: any) => ({
+        url: a.url,
+        fileName: a.fileName,
+        mimeType: a.mimeType,
+        size: a.size,
+      }))
     );
   };
 
@@ -400,6 +458,7 @@ export function useMessages(
     setMsgs,
     listRef,
     send,
+    retrySend,
     edit,
     remove,
     loadOlder,

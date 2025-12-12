@@ -29,6 +29,8 @@ type Props = {
   onReply: (m: Message) => void;
   scrollToMessageId?: string | null;
   onScrolledToMessage?: () => void;
+  loadingOlder: boolean;
+  onRetrySend?: (id: string) => void;
 };
 
 export function MessageList({
@@ -50,6 +52,8 @@ export function MessageList({
   lastReadMessageIdByOthers,
   scrollToMessageId,
   onScrolledToMessage,
+  loadingOlder,
+  onRetrySend,
 }: Props) {
   const safeMsgs = msgs;
 
@@ -122,51 +126,72 @@ export function MessageList({
       <div
         className={
           isDirect
-            ? // DM's: fluid padding – grows with viewport, but never full-screen edge-to-edge
-              "w-full space-y-1 px-3 sm:px-6 lg:px-[10vw] xl:px-[15vw]"
-            : // Channels: light fixed padding
-              "w-full space-y-1 px-3 sm:px-4 lg:px-6"
+            ? "w-full space-y-1 px-3 sm:px-6 lg:px-[10vw] xl:px-[15vw]"
+            : "w-full space-y-1 px-3 sm:px-4 lg:px-6"
         }
       >
-        {safeMsgs.map((m, index) => {
-          const showSeen = isDirect && index === lastMySeenIndex;
-          const isLastOwn =
-            isDirect && m.authorId === meId && index === lastMyIndex;
-          const isHighlighted = highlightedId === m.id;
-
-          return (
-            <div
-              key={m.id}
-              ref={(el) => {
-                messageRefs.current[m.id] = el;
-              }}
-              className={
-                isHighlighted
-                  ? "ring-2 ring-blue-400 bg-blue-50 rounded-md"
-                  : ""
-              }
-            >
-              <MessageItem
-                m={m}
-                meId={meId}
-                channelId={channelId}
-                isMe={m.authorId === meId}
-                isDirect={isDirect}
-                isEditing={editingId === m.id}
-                onStartEdit={() => onStartEdit(m)}
-                onSaveEdit={() => onSaveEdit(m)}
-                onCancelEdit={onCancelEdit}
-                onDelete={() => onDelete(m)}
-                onReply={() => onReply(m)}
-                editText={editText}
-                setEditText={setEditText}
-                formatDateTime={formatDateTime}
-                showSeen={showSeen}
-                isLastOwn={isLastOwn}
-              />
+        {/* Loading older messages-indicator */}
+        {safeMsgs.length > 0 && loadingOlder && (
+          <div className="w-full text-center py-2 text-neutral-500 text-xs">
+            <span className="animate-spin inline-block mr-2">↻</span>
+            Loading older messages…
+          </div>
+        )}
+        {safeMsgs.length === 0 ? (
+          // empty state
+          <div className="flex items-center justify-center py-10">
+            <div className="max-w-sm mx-auto text-center text-sm text-neutral-700 bg-indigo-100 backdrop-blur-sm rounded-xl px-4 py-3 shadow-sm border border-neutral-200">
+              <div className="text-2xl mb-1">🐦🎋</div>
+              <div className="font-medium text-neutral-900 mb-1">
+                Your bamboo forest is quiet…
+              </div>
+              <div className="text-xs text-neutral-600">
+                Send the first message to get the chat going!
+              </div>
             </div>
-          );
-        })}
+          </div>
+        ) : (
+          safeMsgs.map((m, index) => {
+            const showSeen = isDirect && index === lastMySeenIndex;
+            const isLastOwn =
+              isDirect && m.authorId === meId && index === lastMyIndex;
+            const isHighlighted = highlightedId === m.id;
+
+            return (
+              <div
+                key={m.id}
+                ref={(el) => {
+                  messageRefs.current[m.id] = el;
+                }}
+                className={
+                  isHighlighted
+                    ? "ring-2 ring-blue-400 bg-blue-50 rounded-md"
+                    : ""
+                }
+              >
+                <MessageItem
+                  m={m}
+                  meId={meId}
+                  channelId={channelId}
+                  isMe={m.authorId === meId}
+                  isDirect={isDirect}
+                  isEditing={editingId === m.id}
+                  onStartEdit={() => onStartEdit(m)}
+                  onSaveEdit={() => onSaveEdit(m)}
+                  onCancelEdit={onCancelEdit}
+                  onDelete={() => onDelete(m)}
+                  onReply={() => onReply(m)}
+                  editText={editText}
+                  setEditText={setEditText}
+                  formatDateTime={formatDateTime}
+                  showSeen={showSeen}
+                  isLastOwn={isLastOwn}
+                  onRetry={() => onRetrySend?.(m.id)}
+                />
+              </div>
+            );
+          })
+        )}
       </div>
     </div>
   );

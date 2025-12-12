@@ -24,7 +24,19 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-dvh grid place-items-center p-6">
+    <div
+      className="
+      min-h-dvh grid place-items-center p-6
+
+      /* MOBILE LOGIN BACKGROUND */
+      bg-[url('/BackgroundLoginMobile.png')]
+      bg-no-repeat bg-cover bg-center
+
+      /* DESKTOP LOGIN BACKGROUND */
+      md:bg-[url('/BackgroundLoginDesktop.png')]
+      md:bg-no-repeat md:bg-cover md:bg-center
+    "
+    >
       <div className="max-w-sm w-full space-y-4">
         <h1 className="text-2xl font-semibold">Welcome</h1>
         <div className="space-y-2">

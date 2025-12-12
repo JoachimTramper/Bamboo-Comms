@@ -1,4 +1,6 @@
-@import "tailwindcss";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
 :root {
   --background: #ffffff;
@@ -16,6 +18,8 @@ html,
 body {
   max-width: 100vw;
   overflow-x: hidden;
+  height: 100%;
+  overscroll-behavior-y: contain;
 }
 
 body {
@@ -47,4 +51,50 @@ a {
   .imgDark {
     display: unset;
   }
+}
+
+@keyframes fadeInScale {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.search-modal {
+  animation: fadeInScale 140ms ease-out;
+}
+
+@keyframes typingDot {
+  0% {
+    opacity: 0.2;
+    transform: translateY(0px);
+  }
+  20% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+  40% {
+    opacity: 0.2;
+    transform: translateY(0px);
+  }
+  100% {
+    opacity: 0.2;
+    transform: translateY(0px);
+  }
+}
+
+.animate-typingDot1 {
+  animation: typingDot 1.4s infinite ease-in-out;
+}
+
+.animate-typingDot2 {
+  animation: typingDot 1.4s infinite ease-in-out 0.15s;
+}
+
+.animate-typingDot3 {
+  animation: typingDot 1.4s infinite ease-in-out 0.3s;
 }

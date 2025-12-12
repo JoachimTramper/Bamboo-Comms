@@ -20,6 +20,7 @@ export function ChannelSearch({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasSearched, setHasSearched] = useState(false);
+  const inputRef = useRef<HTMLInputElement | null>(null);
 
   // root ref for click-outside behavior
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -79,10 +80,20 @@ export function ChannelSearch({
     };
   }, []);
 
+  useEffect(() => {
+    const id = window.setTimeout(() => {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }, 0);
+
+    return () => window.clearTimeout(id);
+  }, [channelId]);
+
   return (
     <div ref={containerRef}>
       <form onSubmit={handleSubmit} className="flex gap-2">
         <input
+          ref={inputRef}
           className="flex-1 border rounded px-2 py-1 text-sm"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
@@ -90,7 +101,15 @@ export function ChannelSearch({
         />
         <button
           type="submit"
-          className="border rounded px-3 py-1 text-sm"
+          className="
+    px-3 py-1.5 text-sm rounded-lg
+    bg-indigo-600 text-white font-medium
+    shadow-2xl hover:bg-indigo-500 hover:shadow-md
+    border border-transparent
+    transition-colors transition-shadow
+    focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2
+    disabled:opacity-70 disabled:cursor-not-allowed
+  "
           disabled={loading}
         >
           {loading ? "Searching…" : "Search"}
@@ -108,7 +127,7 @@ export function ChannelSearch({
 
       {/* Results list */}
       {hasResults && (
-        <div className="border rounded p-2 max-h-72 overflow-y-auto bg-white/60">
+        <div className="mt-3 border rounded p-2 max-h-72 overflow-y-auto bg-gray-50">
           <div className="text-xs text-gray-500 mb-1">
             {list.length} result{list.length === 1 ? "" : "s"}
           </div>

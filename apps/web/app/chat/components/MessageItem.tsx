@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import type React from "react"; // nodig voor React.MouseEvent / PointerEvent
+import type React from "react";
 import type { Message } from "../types";
 import { Avatar } from "./Avatar";
 import { resolveFileUrl } from "@/lib/files";
@@ -23,6 +23,7 @@ export function MessageItem({
   formatDateTime,
   showSeen,
   isLastOwn,
+  onRetry,
 }: {
   m: Message;
   meId: string;
@@ -40,6 +41,7 @@ export function MessageItem({
   formatDateTime: (iso: string) => string;
   showSeen?: boolean;
   isLastOwn?: boolean;
+  onRetry?: () => void;
 }) {
   const isDeleted = !!m.deletedAt;
   const isEdited =
@@ -48,11 +50,7 @@ export function MessageItem({
 
   const isMentioned =
     !isMe &&
-    !!m.mentions?.some(
-      (mm: any) =>
-        mm.userId === meId || // if mentions is saved as { userId }
-        mm.user?.id === meId // or if you get it via include { user }
-    );
+    !!m.mentions?.some((mm: any) => mm.userId === meId || mm.user?.id === meId);
 
   const [menuOpen, setMenuOpen] = useState(false);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -66,18 +64,15 @@ export function MessageItem({
   const closeMenu = () => setMenuOpen(false);
 
   const handleContextMenu = (e: React.MouseEvent<HTMLDivElement>) => {
-    // desktop right-click
     e.preventDefault();
     openMenu();
   };
-
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    // long-press on touch
-    if (e.pointerType === "touch") {
-      longPressTimer.current = setTimeout(() => {
-        openMenu();
-      }, 400);
-    }
+    if (e.button !== 0) return;
+
+    longPressTimer.current = setTimeout(() => {
+      openMenu();
+    }, 400);
   };
 
   const clearLongPress = () => {
@@ -100,7 +95,6 @@ export function MessageItem({
       className={`group flex gap-3 px-2 py-px rounded-md hover:bg-gray-50 ${
         isDmMine ? "flex-row-reverse" : ""
       }`}
-      onContextMenu={handleContextMenu}
       onPointerDown={handlePointerDown}
       onPointerUp={handlePointerUp}
       onPointerLeave={handlePointerLeave}
@@ -140,26 +134,69 @@ export function MessageItem({
 
         {/* Reply preview */}
         {m.parent && !isDeleted && (
-          <div className="mt-1 mb-1 border-l-2 border-gray-200 pl-2 text-xs text-gray-500">
-            Replying to{" "}
-            <span className="font-medium">{m.parent.author.displayName}</span>
-            {m.parent.content && (
-              <>
-                :{" "}
-                <span className="italic">
-                  {m.parent.content.slice(0, 80)}
-                  {m.parent.content.length > 80 ? "…" : ""}
-                </span>
-              </>
-            )}
+          <div
+            className={`
+      mt-1 mb-1 flex
+      ${isDmMine ? "justify-end" : ""}
+    `}
+          >
+            <div
+              className="
+        max-w-[80%] rounded-lg border border-neutral-200/70
+        bg-white/80 px-3 py-1.5 text-xs text-neutral-600 shadow-sm
+        backdrop-blur-sm
+      "
+            >
+              <div className="font-medium text-neutral-800 truncate">
+                Replying to {m.parent.author.displayName}
+              </div>
+              {m.parent.content && (
+                <div className="text-[11px] text-neutral-500">
+                  {m.parent.content.length > 80
+                    ? `${m.parent.content.slice(0, 80)}…`
+                    : m.parent.content}
+                </div>
+              )}
+            </div>
           </div>
         )}
 
-        {/* Content / Editing / Deleted */}
+        {/* Content / Editing / Failed / Deleted */}
         {isDeleted ? (
           <div className="text-sm text-gray-400 italic">
             Message deleted
             {m.deletedBy?.displayName ? ` by ${m.deletedBy.displayName}` : ""}
+          </div>
+        ) : m.failed ? (
+          // Failed State
+          <div
+            className={`mt-1 flex items-end gap-2 ${
+              isDmMine ? "justify-end" : ""
+            }`}
+          >
+            <div className="max-w-[80%]">
+              <button
+                type="button"
+                onClick={onRetry}
+                className="
+                  inline-flex flex-col items-start max-w-full text-sm
+                  px-3 py-2 rounded-2xl border shadow-sm
+                  bg-red-50 border-red-300 text-red-700
+                  hover:bg-red-100 hover:border-red-400
+                  text-left
+                "
+                title="Tap to retry sending this message"
+              >
+                <div className="font-semibold text-red-700 mb-0.5">
+                  ⚠ Failed to send — tap to retry
+                </div>
+                {m.content && (
+                  <div className="whitespace-pre-wrap break-words">
+                    {m.content}
+                  </div>
+                )}
+              </button>
+            </div>
           </div>
         ) : isEditing ? (
           <div className="mt-1 flex items-center gap-2">
@@ -194,11 +231,15 @@ export function MessageItem({
                 isDmMine ? "justify-end" : ""
               }`}
             >
-              <div className="max-w-[80%]">
+              {/* wider on small screens, on sm+ again 80% */}
+              <div className="max-w-[92%] sm:max-w-[80%]">
                 <div
                   className={`
-        inline-flex items-center max-w-full text-sm whitespace-pre-wrap px-3 py-2 rounded-2xl
-        ${isMe ? "bg-gray-100" : "bg-white border border-gray-200"}
+        inline-flex items-center max-w-full
+        text-sm whitespace-pre-wrap
+        px-3 py-2 rounded-2xl
+        transition-shadow
+        ${isMe ? "bg-teal-200 shadow" : "bg-white border border-gray-200 shadow"}
       `}
                 >
                   {m.content}
@@ -217,65 +258,73 @@ export function MessageItem({
             </div>
 
             {/* Attachments */}
-            {!isDeleted && m.attachments && m.attachments.length > 0 && (
-              <div
-                className={`
+            {!isDeleted &&
+              !m.failed &&
+              m.attachments &&
+              m.attachments.length > 0 && (
+                <div
+                  className={`
       mt-2 flex flex-col gap-1
       ${isDmMine ? "items-end" : ""}
     `}
-              >
-                {m.attachments.map((att) => {
-                  const isImage = att.mimeType.startsWith("image/");
-                  const url = resolveFileUrl(att.url);
+                >
+                  {m.attachments.map((att) => {
+                    const isImage = att.mimeType.startsWith("image/");
+                    const url = resolveFileUrl(att.url);
 
-                  return (
-                    <div
-                      key={att.id}
-                      className="inline-flex items-center gap-2 text-xs text-gray-600"
-                    >
-                      {isImage ? (
-                        <a
-                          href={url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="border rounded-md overflow-hidden max-w-xs hover:border-gray-400"
-                        >
-                          <img
-                            src={url}
-                            alt={att.fileName}
-                            className="max-h-40 w-auto object-cover block"
-                          />
-                        </a>
-                      ) : (
-                        <a
-                          href={url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className={`
+                    return (
+                      <div
+                        key={att.id}
+                        className="inline-flex items-center gap-2 text-xs text-gray-600"
+                      >
+                        {isImage ? (
+                          <a
+                            href={url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="border rounded-md overflow-hidden max-w-xs hover:border-gray-400"
+                          >
+                            <img
+                              src={url}
+                              alt={att.fileName}
+                              className="max-h-40 w-auto object-cover block"
+                            />
+                          </a>
+                        ) : (
+                          <a
+                            href={url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className={`
     inline-flex items-center gap-2 px-2 py-1 border rounded-md hover:bg-gray-50
     ${isDmMine ? "justify-end text-right" : ""}
   `}
-                        >
-                          <span className="text-[11px] font-medium truncate max-w-40">
-                            {att.fileName}
-                          </span>
-                          <span className="text-[10px] text-gray-400">
-                            {(att.size / 1024).toFixed(1)} KB
-                          </span>
-                        </a>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+                          >
+                            <span className="text-[11px] font-medium truncate max-w-[10rem]">
+                              {att.fileName}
+                            </span>
+                            <span className="text-[10px] text-gray-400">
+                              {(att.size / 1024).toFixed(1)} KB
+                            </span>
+                          </a>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
 
-            {/* actions onder de message */}
+            {/* actions below message */}
             {!isDeleted && (
               <>
                 {/* Desktop: hover actions */}
-                <div className="mt-1 hidden gap-2 text-xs text-gray-500 md:group-hover:flex">
-                  {isMe && (
+                <div
+                  className={`
+    mt-1 hidden gap-2 text-xs text-gray-500 md:group-hover:flex
+    ${isDmMine ? "justify-end" : ""}
+  `}
+                >
+                  {isMe && !m.failed && (
                     <>
                       <button className="hover:underline" onClick={onStartEdit}>
                         Edit
@@ -292,8 +341,14 @@ export function MessageItem({
 
                 {/* Context / long-press menu (mobile + right-click) */}
                 {menuOpen && (
-                  <div className="mt-1 inline-flex gap-2 text-xs text-gray-700 bg-white border rounded shadow px-2 py-1 z-10">
-                    {isMe && (
+                  <div
+                    className="
+                    mt-1 inline-flex gap-2 text-xs text-gray-700 bg-white border rounded shadow px-2 py-1 z-10
+                    transition-all duration-150 origin-top-left
+                    animate-[fadeInScale_150ms_ease-out]
+                  "
+                  >
+                    {isMe && !m.failed && (
                       <>
                         <button
                           className="hover:underline"
