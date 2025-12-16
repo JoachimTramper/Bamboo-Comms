@@ -38,6 +38,8 @@ export function Composer({
 
   const canSend = !!value.trim() || files.length > 0;
 
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
   function handleChange(v: string) {
     onChange(v);
 
@@ -89,10 +91,20 @@ export function Composer({
     const before = v.slice(0, at);
     const after = v.slice(at + 1 + mentionQuery.length);
 
-    const next = `${before}@${user.displayName} ${after}`;
+    const insert = `@${user.displayName} `;
+    const next = `${before}${insert}${after}`;
+
     onChange(next);
     setShowMentionList(false);
     setMentionQuery("");
+
+    requestAnimationFrame(() => {
+      const el = inputRef.current;
+      if (!el) return;
+      el.focus();
+      const pos = before.length + insert.length;
+      el.setSelectionRange(pos, pos);
+    });
   }
 
   function handleSendClick() {
@@ -133,12 +145,12 @@ export function Composer({
         <div className="mb-2 flex px-3 sm:px-4">
           <div
             className="
-        max-w-[80%] w-full
-        rounded-lg border border-neutral-200/70
-        bg-white/80 px-3 py-2
-        text-xs text-neutral-700
-        shadow-sm backdrop-blur-sm
-      "
+              max-w-[80%] w-full
+              rounded-lg border border-neutral-200/70
+              bg-white/80 px-3 py-2
+              text-xs text-neutral-700
+              shadow-sm backdrop-blur-sm
+            "
           >
             <div className="font-medium text-neutral-900 truncate">
               Replying to {replyTo.authorName}
@@ -232,6 +244,7 @@ export function Composer({
 
             {/* The actual input, transparent within the wrapper */}
             <input
+              ref={inputRef}
               className="flex-1 bg-transparent border-none outline-none text-sm text-neutral-900 placeholder:text-neutral-500"
               placeholder="Type a message…"
               value={value}
@@ -244,12 +257,12 @@ export function Composer({
         {/* Send button */}
         <button
           className="
-              inline-flex items-center justify-center h-9 px-4 rounded-full text-sm font-medium
-    bg-indigo-600 text-white border border-transparent
-    shadow-sm hover:bg-indigo-500 hover:shadow-md
-    transition-colors transition-shadow
-    focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2
-    disabled:opacity-70 disabled:cursor-not-allowed
+            inline-flex items-center justify-center h-9 px-4 rounded-full text-sm font-medium
+          bg-indigo-600 text-white border border-transparent
+            shadow-sm hover:bg-indigo-500 hover:shadow-md
+            transition-colors transition-shadow
+            focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2
+            disabled:opacity-70 disabled:cursor-not-allowed
           "
           disabled={!canSend}
           onClick={handleSendClick}

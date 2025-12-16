@@ -136,16 +136,16 @@ export function MessageItem({
         {m.parent && !isDeleted && (
           <div
             className={`
-      mt-1 mb-1 flex
-      ${isDmMine ? "justify-end" : ""}
-    `}
+              mt-1 mb-1 flex
+              ${isDmMine ? "justify-end" : ""}
+            `}
           >
             <div
               className="
-        max-w-[80%] rounded-lg border border-neutral-200/70
-        bg-white/80 px-3 py-1.5 text-xs text-neutral-600 shadow-sm
-        backdrop-blur-sm
-      "
+                max-w-[80%] rounded-lg border border-neutral-200/70
+                bg-white/80 px-3 py-1.5 text-xs text-neutral-600 shadow-sm
+                backdrop-blur-sm
+              "
             >
               <div className="font-medium text-neutral-800 truncate">
                 Replying to {m.parent.author.displayName}
@@ -227,34 +227,32 @@ export function MessageItem({
           <>
             {/* ROW: message + ticks */}
             <div
-              className={`flex items-end gap-2 ${
-                isDmMine ? "justify-end" : ""
-              }`}
+              className={`flex items-end gap-2 ${isDmMine ? "justify-end" : ""}`}
             >
-              {/* wider on small screens, on sm+ again 80% */}
-              <div className="max-w-[92%] sm:max-w-[80%]">
-                <div
-                  className={`
-        inline-flex items-center max-w-full
-        text-sm whitespace-pre-wrap
-        px-3 py-2 rounded-2xl
-        transition-shadow
-        ${isMe ? "bg-teal-200 shadow" : "bg-white border border-gray-200 shadow"}
-      `}
-                >
-                  {m.content}
-                </div>
-              </div>
-
-              {/* Sent/Seen right aligned, DM only */}
+              {/* Sent/Seen LEFT of bubble, DM only */}
               {isMe && isDirect && !isDeleted && (showSeen || isLastOwn) && (
-                <div className="text-[11px] text-gray-400 flex items-center gap-1 shrink-0">
+                <div className="text-[11px] text-gray-400 flex items-center gap-1 shrink-0 mb-1">
                   <span aria-hidden>{showSeen ? "✓✓" : "✓"}</span>
                   <span className="hidden sm:inline">
                     {showSeen ? "Seen" : "Sent"}
                   </span>
                 </div>
               )}
+
+              {/* wider on small screens, on sm+ again 80% */}
+              <div className="max-w-[92%] sm:max-w-[80%]">
+                <div
+                  className={`
+                    inline-flex items-center max-w-full
+                    text-sm whitespace-pre-wrap
+                    px-3 py-2 rounded-2xl
+                    transition-shadow
+                    ${isMe ? "bg-teal-200 shadow" : "bg-white border border-gray-200 shadow"}
+                  `}
+                >
+                  {m.content}
+                </div>
+              </div>
             </div>
 
             {/* Attachments */}
@@ -264,9 +262,9 @@ export function MessageItem({
               m.attachments.length > 0 && (
                 <div
                   className={`
-      mt-2 flex flex-col gap-1
-      ${isDmMine ? "items-end" : ""}
-    `}
+                    mt-2 flex flex-col gap-1
+                    ${isDmMine ? "items-end" : ""}
+                  `}
                 >
                   {m.attachments.map((att) => {
                     const isImage = att.mimeType.startsWith("image/");
@@ -296,9 +294,9 @@ export function MessageItem({
                             target="_blank"
                             rel="noreferrer"
                             className={`
-    inline-flex items-center gap-2 px-2 py-1 border rounded-md hover:bg-gray-50
-    ${isDmMine ? "justify-end text-right" : ""}
-  `}
+                              inline-flex items-center gap-2 px-2 py-1 border rounded-md hover:bg-gray-50
+                              ${isDmMine ? "justify-end text-right" : ""}
+                            `}
                           >
                             <span className="text-[11px] font-medium truncate max-w-[10rem]">
                               {att.fileName}
@@ -320,9 +318,9 @@ export function MessageItem({
                 {/* Desktop: hover actions */}
                 <div
                   className={`
-    mt-1 hidden gap-2 text-xs text-gray-500 md:group-hover:flex
-    ${isDmMine ? "justify-end" : ""}
-  `}
+                    mt-1 hidden gap-2 text-xs text-gray-500 md:group-hover:flex
+                    ${isDmMine ? "justify-end" : ""}
+                  `}
                 >
                   {isMe && !m.failed && (
                     <>
@@ -343,10 +341,10 @@ export function MessageItem({
                 {menuOpen && (
                   <div
                     className="
-                    mt-1 inline-flex gap-2 text-xs text-gray-700 bg-white border rounded shadow px-2 py-1 z-10
-                    transition-all duration-150 origin-top-left
-                    animate-[fadeInScale_150ms_ease-out]
-                  "
+                      mt-1 inline-flex gap-2 text-xs text-gray-700 bg-white border rounded shadow px-2 py-1 z-10
+                      transition-all duration-150 origin-top-left
+                      animate-[fadeInScale_150ms_ease-out]
+                    "
                   >
                     {isMe && !m.failed && (
                       <>

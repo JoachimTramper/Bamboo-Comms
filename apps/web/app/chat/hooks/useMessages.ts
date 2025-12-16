@@ -120,6 +120,27 @@ export function useMessages(
     }
   };
 
+  // join/leave on active change
+  useEffect(() => {
+    if (!ready || !active) return;
+
+    const s = getSocket();
+
+    const join = () => {
+      s.emit("channel.join", { channelId: active });
+    };
+
+    join(); // join immediately
+    s.on("connect", join); // re-join after reconnect
+
+    return () => {
+      s.off("connect", join);
+      try {
+        s.emit("channel.leave", { channelId: active });
+      } catch {}
+    };
+  }, [ready, active]);
+
   // Realtime message events (deps length stays constant)
   useEffect(() => {
     if (!ready) return;

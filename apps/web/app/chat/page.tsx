@@ -30,11 +30,17 @@ import { MessageList } from "./components/MessageList";
 import { Composer } from "./components/Composer";
 import { Sidebar } from "./components/Sidebar";
 import { ChatHeader } from "./components/ChatHeader";
-import { ChannelSearch } from "./components/ChannelSearch";
+import { TypingIndicator } from "./components/TypingIndicator";
+import { SearchModal } from "./components/SearchModal";
+
 import { useMessages } from "./hooks/useMessages";
 import { useTyping } from "./hooks/useTyping";
 import { usePresence } from "./hooks/usePresence";
 import { useUnread } from "./hooks/useUnread";
+import { useMobileSidebar } from "./hooks/useMobileSidebar";
+import { useDmPeer } from "./hooks/useDmPeer";
+import { useMentionCandidates } from "./hooks/useMentionCandidates";
+
 import {
   extractMentionUserIds,
   formatDateTime,
@@ -42,7 +48,6 @@ import {
   mergeChannelsById,
   type MentionCandidate,
 } from "./utils/utils";
-import { X } from "lucide-react";
 
 type ReplyTarget = {
   id: string;
@@ -68,9 +73,8 @@ export default function ChatPage() {
     null
   );
   const [searchOpen, setSearchOpen] = useState(false);
-  const swipeStartX = useRef<number | null>(null);
-  const swipeCurrentX = useRef<number | null>(null);
-  const swipeSidebarWasOpen = useRef(false);
+
+  useMobileSidebar(sidebarOpen, setSidebarOpen);
 
   // auth guard
   useEffect(() => {
@@ -101,91 +105,6 @@ export default function ChatPage() {
       }
     })();
   }, []);
-
-  // body scroll lock when sidebar open (mobile)
-  useEffect(() => {
-    if (sidebarOpen) {
-      // body scroll lock
-      document.body.style.overflow = "hidden";
-    } else {
-      document.body.style.overflow = "";
-    }
-
-    return () => {
-      // cleanup on unmount
-      document.body.style.overflow = "";
-    };
-  }, [sidebarOpen]);
-
-  // swipe open/close sidebar (mobile)
-  useEffect(() => {
-    function handleTouchStart(e: TouchEvent) {
-      const t = e.touches[0];
-      if (!t) return;
-
-      swipeStartX.current = t.clientX;
-      swipeCurrentX.current = t.clientX;
-      swipeSidebarWasOpen.current = sidebarOpen;
-    }
-
-    function handleTouchMove(e: TouchEvent) {
-      if (swipeStartX.current == null) return;
-      const t = e.touches[0];
-      if (!t) return;
-
-      swipeCurrentX.current = t.clientX;
-    }
-
-    function handleTouchEnd() {
-      if (swipeStartX.current == null || swipeCurrentX.current == null) {
-        swipeStartX.current = null;
-        swipeCurrentX.current = null;
-        return;
-      }
-
-      const startX = swipeStartX.current;
-      const deltaX = swipeCurrentX.current - swipeStartX.current;
-      const THRESHOLD = 60;
-
-      if (!swipeSidebarWasOpen.current) {
-        // sidebar was dicht → vanuit linkerrand naar rechts swipen
-        if (startX <= 24 && deltaX > THRESHOLD) {
-          setSidebarOpen(true);
-        }
-      } else {
-        // sidebar was open → naar links swipen om te sluiten
-        if (deltaX < -THRESHOLD) {
-          setSidebarOpen(false);
-        }
-      }
-
-      swipeStartX.current = null;
-      swipeCurrentX.current = null;
-    }
-
-    window.addEventListener("touchstart", handleTouchStart);
-    window.addEventListener("touchmove", handleTouchMove);
-    window.addEventListener("touchend", handleTouchEnd);
-
-    return () => {
-      window.removeEventListener("touchstart", handleTouchStart);
-      window.removeEventListener("touchmove", handleTouchMove);
-      window.removeEventListener("touchend", handleTouchEnd);
-    };
-  }, [sidebarOpen]);
-
-  useEffect(() => {
-    if (!searchOpen) return;
-
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        setSearchOpen(false);
-      }
-    };
-
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [searchOpen]);
 
   // hooks
   const {
@@ -419,21 +338,6 @@ export default function ChatPage() {
     }
   }
 
-  function TypingIndicator({ label }: { label: string | null }) {
-    if (!label) return null;
-
-    return (
-      <div className="px-3 md:px-4 py-2 bg-white border-t flex items-center gap-2">
-        <div className="flex items-center gap-1">
-          <span className="w-2 h-2 bg-gray-400 rounded-full animate-typingDot1"></span>
-          <span className="w-2 h-2 bg-gray-400 rounded-full animate-typingDot2"></span>
-          <span className="w-2 h-2 bg-gray-400 rounded-full animate-typingDot3"></span>
-        </div>
-        <span className="text-xs text-gray-600">{label}</span>
-      </div>
-    );
-  }
-
   async function openDM(otherUserId: string) {
     try {
       const dm = await getOrCreateDirectChannel(otherUserId);
@@ -482,6 +386,24 @@ export default function ChatPage() {
     }
   }
 
+  const activeChannel = channels.find((c) => c.id === active);
+  const regularChannels = channels.filter((c) => !c.isDirect);
+  const dmChannels = channels.filter((c) => c.isDirect);
+
+  const dmPeer = useDmPeer({
+    activeChannel,
+    myId: user?.sub,
+    othersOnline,
+    recently,
+  });
+
+  const mentionCandidates = useMentionCandidates({
+    activeChannel,
+    user,
+    othersOnline,
+    recently,
+  });
+
   if (!user) {
     return (
       <div className="min-h-dvh grid place-items-center">
@@ -491,69 +413,6 @@ export default function ChatPage() {
       </div>
     );
   }
-
-  const activeChannel = channels.find((c) => c.id === active);
-  const regularChannels = channels.filter((c) => !c.isDirect);
-  const dmChannels = channels.filter((c) => c.isDirect);
-
-  // Presence info for active DM
-  const dmPeer =
-    activeChannel && activeChannel.isDirect && user
-      ? (() => {
-          const member = activeChannel.members?.find((m) => m.id !== user.sub);
-          if (!member) return null;
-
-          const onlineEntry = othersOnline.find((u) => u.id === member.id);
-          const recent = recently.find((u) => u.id === member.id);
-
-          let status: "online" | "idle" | "offline" = "offline";
-          if (onlineEntry) {
-            status = onlineEntry.status === "idle" ? "idle" : "online";
-          } else if (recent) {
-            status = "offline";
-          }
-
-          const statusText =
-            status === "online"
-              ? "Online"
-              : status === "idle"
-                ? "Idle"
-                : recent
-                  ? formatLastOnline(recent.lastSeen)
-                  : "Offline";
-
-          return {
-            id: member.id,
-            displayName: member.displayName,
-            avatarUrl:
-              member.avatarUrl ??
-              onlineEntry?.avatarUrl ??
-              recent?.avatarUrl ??
-              null,
-            isOnline: status === "online" || status === "idle",
-            isIdle: status === "idle",
-            statusText,
-          };
-        })()
-      : null;
-
-  const mentionCandidates: MentionCandidate[] =
-    activeChannel?.members && activeChannel.members.length > 0
-      ? activeChannel.members.map((m) => ({
-          id: m.id,
-          displayName: m.displayName,
-        }))
-      : [
-          { id: user.sub, displayName: user.displayName },
-          ...othersOnline.map((u) => ({
-            id: u.id,
-            displayName: u.displayName,
-          })),
-          ...recently.map((u) => ({
-            id: u.id,
-            displayName: u.displayName,
-          })),
-        ];
 
   return (
     <div className="fixed inset-0 overflow-hidden flex flex-col">
@@ -668,45 +527,18 @@ export default function ChatPage() {
           </div>
         </main>
       </div>
-      {searchOpen && active && (
-        <div
-          className="fixed inset-0 z-30 flex items-center justify-center bg-black/60 backdrop-blur-sm px-3"
-          onClick={() => setSearchOpen(false)}
-        >
-          <div
-            className="w-full max-w-xl rounded-lg bg-neutral-200 shadow-xl border overflow-hidden search-modal"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Header */}
-            <div className="flex items-center justify-between px-3 py-2 border-b bg-gray-50">
-              <div className="text-xs font-medium text-gray-500 truncate">
-                Search in{" "}
-                {activeChannel?.isDirect
-                  ? (dmPeer?.displayName ?? "this conversation")
-                  : `#${activeChannel?.name ?? "channel"}`}
-              </div>
-              <button
-                type="button"
-                className="text-xs text-gray-500 hover:text-gray-800"
-                onClick={() => setSearchOpen(false)}
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            {/* Content */}
-            <div className="p-3 max-h-[70vh] overflow-y-auto">
-              <ChannelSearch
-                channelId={active}
-                onJumpToMessage={(messageId) => {
-                  setSearchOpen(false);
-                  setScrollToMessageId(messageId);
-                }}
-              />
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Search modal */}
+      <SearchModal
+        open={searchOpen}
+        channelId={active}
+        activeChannel={activeChannel}
+        dmPeerName={dmPeer?.displayName ?? null}
+        onClose={() => setSearchOpen(false)}
+        onJumpToMessage={(messageId) => {
+          setSearchOpen(false);
+          setScrollToMessageId(messageId);
+        }}
+      />
     </div>
   );
 }

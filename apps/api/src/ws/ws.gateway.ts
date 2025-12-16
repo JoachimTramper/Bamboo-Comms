@@ -13,6 +13,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { JwtService } from '@nestjs/jwt';
 import { PresenceService } from './presence.service';
 import { OnModuleInit, OnModuleDestroy } from '@nestjs/common';
+import { GENERAL_CHANNEL_ID } from '../channels.constants';
 
 type JwtPayload = { sub: string; email: string };
 type PresenceStatus = 'online' | 'idle' | 'offline';
@@ -40,6 +41,9 @@ export class WsGateway
   // idle check timer + last emitted status per user
   private idleTimer: NodeJS.Timeout | null = null;
   private lastEmittedStatus = new Map<string, PresenceStatus>();
+
+  // welcomed users per channel
+  private welcomed = new Set<string>(); // `${channelId}:${userId}`
 
   // ---- lifecycle: idle-check interval ----
   onModuleInit() {
@@ -238,19 +242,62 @@ export class WsGateway
     }
   }
 
-  // ---- messages ----
+  // ---- channel join / leave ----
+  @SubscribeMessage('channel.join')
+  handleJoin(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() body: { channelId: string },
+  ) {
+    const u = (client as any).user as JwtPayload | undefined;
+    if (!u) return;
 
-  // Backend calls this after a create to push full payload
-  async emitMessageCreated(payload: { id: string }) {
-    const msg = await this.prisma.message.findUnique({
-      where: { id: payload.id },
-      include: {
-        author: {
-          select: { id: true, displayName: true, avatarUrl: true },
-        },
+    const channelId = body?.channelId;
+    if (!channelId) return;
+
+    // ✅ ALWAYS join
+    client.join(channelId);
+
+    // welcome only in general
+    if (channelId !== GENERAL_CHANNEL_ID) return { ok: true };
+
+    const key = `${channelId}:${u.sub}`;
+    if (this.welcomed.has(key)) return { ok: true };
+
+    this.welcomed.add(key);
+
+    this.server.to(channelId).emit('message.created', {
+      id: `welcome-${Date.now()}-${u.sub}`,
+      channelId,
+      authorId: 'bot-ai',
+      content: '👋 Welcome! Type `!help` to see what I can do.',
+      createdAt: new Date().toISOString(),
+      author: {
+        id: 'bot-ai',
+        displayName: 'KennyTheKommunicator',
+        avatarUrl: null,
       },
+      parent: null,
+      reactions: [],
+      mentions: [],
+      attachments: [],
     });
-    if (msg) this.server.emit('message.created', msg);
+
+    return { ok: true };
+  }
+
+  @SubscribeMessage('channel.leave')
+  handleLeave(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() body: { channelId: string },
+  ) {
+    const u = (client as any).user as JwtPayload | undefined;
+    if (!u) return;
+
+    const channelId = body?.channelId;
+    if (!channelId) return;
+
+    client.leave(channelId);
+    return { ok: true };
   }
 
   // ---- typing (activity) ----
@@ -272,7 +319,7 @@ export class WsGateway
     // direct presence broadcast, so status immediately jumps from "idle" → "online"
     await this.broadcastPresenceUpdate(u.sub);
 
-    this.server.emit('typing', {
+    this.server.to(body.channelId).emit('typing', {
       channelId: body.channelId,
       userId: user.id,
       displayName: user.displayName,
