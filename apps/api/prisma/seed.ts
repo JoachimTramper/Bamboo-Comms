@@ -2,6 +2,10 @@ import { PrismaClient, Role } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
+const BOT_EMAIL = 'bot@ai.local';
+const BOT_AVATAR = '/uploads/avatars/bamboobob.png';
+const BOT_NAME = 'BambooBob';
+
 function parseAdminEmails(raw?: string) {
   if (!raw) return [];
   return raw
@@ -28,7 +32,28 @@ async function main() {
     console.log('Channel "general" already exists.');
   }
 
-  // 2) Promote admin(s) if user exists
+  // 2) Ensure bot user exists + avatar
+  await prisma.user.upsert({
+    where: { email: BOT_EMAIL },
+    update: {
+      displayName: BOT_NAME,
+      avatarUrl: BOT_AVATAR,
+      role: Role.USER,
+      emailVerifiedAt: new Date(),
+    },
+    create: {
+      email: BOT_EMAIL,
+      passwordHash: '!', // bot never logs in
+      displayName: BOT_NAME,
+      avatarUrl: BOT_AVATAR,
+      role: Role.USER,
+      emailVerifiedAt: new Date(),
+    },
+  });
+
+  console.log('Ensured bot user BambooBob.');
+
+  // 3) Promote admin(s) if user exists
   if (adminEmails.length === 0) {
     console.log('No ADMIN_EMAIL set, skipping admin bootstrap.');
     return;

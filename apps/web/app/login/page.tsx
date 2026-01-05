@@ -46,13 +46,10 @@ export default function LoginPage() {
       <div className="flex flex-col items-center gap-6">
         <div className="flex flex-col items-center gap-1">
           <img
-            src="/BambooBobLogo.png"
-            alt="Bamboo Bob"
+            src="/BambooCommsLogo.png"
+            alt="Bamboo Comms"
             className="w-48 md:w-64 lg:w-72"
           />
-          <h1 className="font-ink text-3xl md:text-4xl font-bold text-center">
-            Welcome
-          </h1>
         </div>
 
         <div className="space-y-2">

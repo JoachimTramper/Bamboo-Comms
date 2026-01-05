@@ -3,6 +3,7 @@ import {
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { UsersService } from '../users/users.service';
 import * as bcrypt from 'bcrypt';
 import { randomBytes, createHash } from 'crypto';
@@ -52,49 +53,66 @@ export class AuthService {
     if (existing) throw new BadRequestException('Email already in use');
 
     const hash = await bcrypt.hash(password, 12);
-
     const bypassVerify = this.isValidInviteCode(inviteCode);
 
-    // Invite-bypass: direct verified, no email
-    if (bypassVerify) {
+    try {
+      // Invite-bypass: direct verified, no email
+      if (bypassVerify) {
+        const user = await this.users.create({
+          email: normalizedEmail,
+          passwordHash: hash,
+          displayName,
+          emailVerifiedAt: new Date(),
+        });
+
+        await this.users.ensureGeneralMembership(user.id);
+
+        return { ok: true, bypassedEmailVerification: true };
+      }
+
+      // Normal flow: create + send verify email
       const user = await this.users.create({
         email: normalizedEmail,
         passwordHash: hash,
         displayName,
-        emailVerifiedAt: new Date(),
       });
 
-      await this.users.ensureGeneralMembership(user.id);
+      const token = makeToken();
+      const tokenHash = hashToken(token);
+      const expiresAt = new Date(Date.now() + 1000 * 60 * 60 * 24); // 24u
 
-      return { ok: true, bypassedEmailVerification: true };
+      await this.users.upsertEmailVerificationToken(
+        user.id,
+        tokenHash,
+        expiresAt,
+      );
+
+      try {
+        await this.mail.sendVerifyEmail(user.email, token);
+      } catch {
+        await this.users.deleteEmailVerificationToken(user.id);
+        await this.users.deleteUser(user.id);
+        throw new BadRequestException('Failed to send verification email');
+      }
+
+      return { ok: true };
+    } catch (e) {
+      if (
+        e instanceof Prisma.PrismaClientKnownRequestError &&
+        e.code === 'P2002'
+      ) {
+        const target = (e.meta as any)?.target as string[] | undefined;
+
+        if (target?.includes('displayName')) {
+          throw new BadRequestException('Username already taken');
+        }
+        if (target?.includes('email')) {
+          throw new BadRequestException('Email already in use');
+        }
+      }
+
+      throw e;
     }
-
-    // Normal flow: create + send verify email
-    const user = await this.users.create({
-      email: normalizedEmail,
-      passwordHash: hash,
-      displayName,
-    });
-
-    const token = makeToken();
-    const tokenHash = hashToken(token);
-    const expiresAt = new Date(Date.now() + 1000 * 60 * 60 * 24); // 24u
-
-    await this.users.upsertEmailVerificationToken(
-      user.id,
-      tokenHash,
-      expiresAt,
-    );
-
-    try {
-      await this.mail.sendVerifyEmail(user.email, token);
-    } catch (err) {
-      await this.users.deleteEmailVerificationToken(user.id);
-      await this.users.deleteUser(user.id);
-      throw new BadRequestException('Failed to send verification email');
-    }
-
-    return { ok: true };
   }
 
   async login(email: string, password: string) {
