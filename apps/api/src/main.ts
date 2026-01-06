@@ -22,9 +22,12 @@ async function bootstrap() {
     credentials: true,
   });
 
-  app.useStaticAssets(UPLOADS_DIR, {
-    prefix: '/uploads',
+  app.use('/uploads', (_req, res, next) => {
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    next();
   });
+
+  app.useStaticAssets(UPLOADS_DIR, { prefix: '/uploads' });
 
   const port = process.env.PORT ? Number(process.env.PORT) : 3000;
   await app.listen(port, '0.0.0.0');
