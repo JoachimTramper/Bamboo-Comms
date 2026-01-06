@@ -7,7 +7,6 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { WsGateway } from '../ws/ws.gateway';
 import { AiBotService } from '../bot/ai-bot.service';
-import { AI_BOT_USER_ID } from '../bot/ai-bot.constants';
 import { formatHistoryLine } from '../bot/ai-bot.format';
 import { GENERAL_CHANNEL_ID } from '../channels.constants';
 
@@ -20,6 +19,14 @@ export class MessagesService {
     private ws: WsGateway,
     private aiBot: AiBotService,
   ) {}
+
+  private async getBotUserId() {
+    const bot = await this.prisma.user.findFirst({
+      where: { email: 'bot@ai.local' },
+      select: { id: true },
+    });
+    return bot?.id ?? null;
+  }
 
   async list(channelId: string, userId: string, take = 50, cursor?: string) {
     await this.assertCanAccessChannel(channelId, userId);
@@ -204,8 +211,11 @@ export class MessagesService {
     // 2b) clean mentions (remove duplicates, remove falsy)
     const cleanMentions = Array.from(new Set(mentionUserIds)).filter(Boolean);
 
-    // 2c) Check if bot is mentioned
-    const isBotMentioned = cleanMentions.includes(AI_BOT_USER_ID);
+    // 2c) get bot user ID
+    const botId = await this.getBotUserId();
+
+    // 2d) Check if bot is mentioned
+    const isBotMentioned = botId && cleanMentions.includes(botId);
 
     // 3) create message (incl. parent, author, reactions, mentions, attachments)
     const msg = await this.prisma.message.create({
@@ -344,21 +354,20 @@ export class MessagesService {
     const isCommand = text.startsWith('!');
     const isGeneral = msg.channelId === GENERAL_CHANNEL_ID;
     const botMentionedInSavedMsg = msg.mentions?.some(
-      (m) =>
-        m.user?.id === AI_BOT_USER_ID || (m as any).userId === AI_BOT_USER_ID,
+      (m) => (m as any).userId === botId || m.user?.id === botId,
     );
 
     // 5) if bot mentioned, generate reply async
     if (
       isGeneral &&
       (isCommand || botMentionedInSavedMsg) &&
-      msg.authorId !== AI_BOT_USER_ID
+      msg.authorId !== botId
     ) {
       void (async () => {
         // bot typing ON
         this.ws.server.to(`view:${msg.channelId}`).emit('typing', {
           channelId: msg.channelId,
-          userId: AI_BOT_USER_ID,
+          userId: botId,
           displayName: 'BambooBob',
           isTyping: true,
         });
@@ -410,7 +419,7 @@ export class MessagesService {
           const notClause: any[] = [{ id: msg.id }];
           if (wantsSinceLastRead) {
             notClause.push({ authorId: msg.authorId }); // exclude requester
-            notClause.push({ authorId: AI_BOT_USER_ID }); // exclude bot's own messages
+            notClause.push({ authorId: botId }); // exclude bot's own messages
           }
 
           // ---- fetch context ----
@@ -508,7 +517,7 @@ export class MessagesService {
           // bot typing OFF
           this.ws.server.to(`view:${msg.channelId}`).emit('typing', {
             channelId: msg.channelId,
-            userId: AI_BOT_USER_ID,
+            userId: botId,
             displayName: 'BambooBob',
             isTyping: false,
           });
@@ -534,6 +543,9 @@ export class MessagesService {
 
     // Post as bot message
     const msg = await this.createBotMessage(channelId, digestText);
+    if (!msg) {
+      throw new Error('Bot user not found (bot@ai.local). Did you run seed?');
+    }
 
     return { ok: true, messageId: msg.id };
   }
@@ -545,11 +557,13 @@ export class MessagesService {
   ): Promise<boolean> {
     const since = new Date(Date.now() - hours * 60 * 60 * 1000);
 
+    const botId = await this.getBotUserId();
+
     const count = await this.prisma.message.count({
       where: {
         channelId,
         deletedAt: null,
-        authorId: { not: AI_BOT_USER_ID },
+        authorId: botId ? { not: botId } : undefined,
         createdAt: { gte: since },
       },
     });
@@ -563,10 +577,13 @@ export class MessagesService {
     content: string,
     markReadForUserId?: string,
   ) {
+    const botId = await this.getBotUserId();
+    if (!botId) return null;
+
     const msg = await this.prisma.message.create({
       data: {
         channelId,
-        authorId: AI_BOT_USER_ID,
+        authorId: botId,
         content: content ?? '',
       },
       include: {
@@ -613,20 +630,21 @@ export class MessagesService {
   }
 
   // helper to assert channel access
-
   private async assertCanAccessChannel(channelId: string, userId: string) {
-    if (channelId === GENERAL_CHANNEL_ID) return;
-
     const ch = await this.prisma.channel.findUnique({
       where: { id: channelId },
       select: {
         id: true,
+        name: true,
         isDirect: true,
         members: { where: { id: userId }, select: { id: true } },
       },
     });
 
     if (!ch) throw new NotFoundException('Channel not found');
+
+    // general is always readable
+    if (ch.name === 'general' && ch.isDirect === false) return;
 
     if (ch.isDirect && ch.members.length === 0) {
       throw new ForbiddenException('Not a channel member');
