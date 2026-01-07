@@ -10,6 +10,8 @@ import { randomBytes, createHash } from 'crypto';
 import { JwtService } from '@nestjs/jwt';
 import { MailService } from '../mail/mail.service';
 
+const DISPLAYNAME_MAX = 32;
+
 function makeToken() {
   return randomBytes(32).toString('hex');
 }
@@ -48,6 +50,16 @@ export class AuthService {
     inviteCode?: string,
   ) {
     const normalizedEmail = email.trim().toLowerCase();
+    const dn = (displayName ?? '').trim();
+
+    if (!dn) {
+      throw new BadRequestException('Display name is required');
+    }
+    if (dn.length > DISPLAYNAME_MAX) {
+      throw new BadRequestException(
+        `Display name can be max ${DISPLAYNAME_MAX} characters`,
+      );
+    }
 
     const existing = await this.users.findByEmail(normalizedEmail);
     if (existing) throw new BadRequestException('Email already in use');
@@ -61,7 +73,7 @@ export class AuthService {
         const user = await this.users.create({
           email: normalizedEmail,
           passwordHash: hash,
-          displayName,
+          displayName: dn,
           emailVerifiedAt: new Date(),
         });
 
@@ -74,7 +86,7 @@ export class AuthService {
       const user = await this.users.create({
         email: normalizedEmail,
         passwordHash: hash,
-        displayName,
+        displayName: dn,
       });
 
       const token = makeToken();
@@ -96,7 +108,8 @@ export class AuthService {
       }
 
       return { ok: true };
-    } catch (e) {
+    } catch (e: any) {
+      // Unique constraint (email/displayName)
       if (
         e instanceof Prisma.PrismaClientKnownRequestError &&
         e.code === 'P2002'
@@ -109,6 +122,16 @@ export class AuthService {
         if (target?.includes('email')) {
           throw new BadRequestException('Email already in use');
         }
+      }
+
+      // Value too long for column (e.g. VARCHAR(32)) fallback
+      if (
+        e instanceof Prisma.PrismaClientKnownRequestError &&
+        e.code === 'P2000'
+      ) {
+        throw new BadRequestException(
+          `Display name can be max ${DISPLAYNAME_MAX} characters`,
+        );
       }
 
       throw e;
@@ -148,7 +171,6 @@ export class AuthService {
     await this.users.markEmailVerified(record.userId);
     await this.users.ensureGeneralMembership(record.userId);
 
-    // token opruimen
     await this.users.deleteEmailVerificationToken(record.userId);
 
     return { ok: true };
