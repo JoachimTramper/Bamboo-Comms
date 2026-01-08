@@ -183,7 +183,7 @@ export class WsGateway
       where: {
         channelId,
         authorId: botId,
-        content: { contains: `[welcome:${userId}]` },
+        content: { contains: `[welcome: ${userId}]` },
         deletedAt: null,
       },
       select: { id: true },
