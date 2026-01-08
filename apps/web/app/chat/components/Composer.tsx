@@ -142,9 +142,9 @@ export function Composer({
     <div
       className="
         py-2 bg-transparent
-        pl-[calc(0.75rem+env(safe-area-inset-left))]
-        pr-[calc(0.75rem+env(safe-area-inset-right))]
-        sm:px-4
+        px-2 sm:px-4
+        supports-[padding:env(safe-area-inset-right)]:pl-[calc(0.5rem+env(safe-area-inset-left))]
+        supports-[padding:env(safe-area-inset-right)]:pr-[calc(0.5rem+env(safe-area-inset-right))]
       "
     >
       {/* Reply bar */}
