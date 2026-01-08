@@ -200,7 +200,7 @@ export default function ChatPage() {
       const el = listRef.current;
       if (!el) return;
 
-      // scroll naar onder wanneer de viewport verandert
+      // scroll to bottom when the viewport changes
       el.scrollTop = el.scrollHeight;
     };
 
@@ -494,7 +494,7 @@ export default function ChatPage() {
               />
             </div>
             {/* Messages scroll behind it */}
-            <div className="h-full overflow-y-auto pt-16 md:pt-0">
+            <div className="h-full pt-16 md:pt-0">
               <MessageList
                 msgs={msgs}
                 meId={user.sub}
