@@ -1,6 +1,6 @@
-# Chat AI Platform
+# Bamboo Comms
 
-A full-stack real-time chat platform with a built-in AI assistant,
+A full-stack real-time chat application with a built-in AI assistant,
 built with **Next.js**, **NestJS**, **Prisma**, **PostgreSQL**, and **Socket.IO**.
 
 This app includes:
@@ -17,6 +17,12 @@ This app includes:
 
 ---
 
+## Live Demo
+
+https://bamboo-comms.joachimtramper.dev
+
+---
+
 ## Tech Stack
 
 - Frontend: Next.js (React + TypeScript)
@@ -24,6 +30,14 @@ This app includes:
 - Database: PostgreSQL (Docker)
 - Realtime: WebSockets (Socket.IO)
 - Monorepo: Turborepo (pnpm workspaces)
+
+---
+
+## Deployment
+
+- Frontend: Vercel
+- Backend & PostgreSQL: Railway
+- Custom domain with HTTPS
 
 ---
 
@@ -86,15 +100,18 @@ Lightweight realtime presence system:
 
 ## AI Chat Bot
 
-The platform includes an integrated AI assistant powered by **Groq LLMs**.
+The application includes an integrated AI assistant (**BambooBob**) powered by **Groq LLMs**.
+
+The bot is designed as a lightweight, non-intrusive assistant that enhances the chat experience without disrupting normal message flow.
 
 ### Capabilities
 
-- Mention-based interaction (`@BambooBob`)
-- Natural language responses using Groq's OpenAI-compatible API
-- Context-aware replies using recent chat history
-- Rate-limited to prevent spam
-- Scoped to public channels (not active in DMs)
+- Mention-based interaction (`@BambooBob`) for natural language questions
+- Deterministic command handling for fast and reliable responses
+- Context-aware replies using recent channel message history
+- Rate-limited execution to prevent spam or abuse
+- Scoped to public channels (not active in direct messages)
+- Graceful fallback when the LLM is unavailable
 
 ### Available Commands
 
@@ -103,6 +120,11 @@ The platform includes an integrated AI assistant powered by **Groq LLMs**.
 - `!ping` – simple connectivity test
 - `!whoami` – show your user id
 - `!summarize` – summarize recent messages
+- `!digest` – summarize the last 24 hours
+- `!digest on` – enable daily message digest
+- `!digest off` – disable daily digest
+- `!digest status` – show current digest status
+- `!digest HH:mm` (e.g. !digest 19:30) – set daily digest time and enable it
 
 ### Design choices
 
@@ -117,8 +139,8 @@ The platform includes an integrated AI assistant powered by **Groq LLMs**.
 
 1. Clone & install
 
-   git clone https://github.com/<your-username>/chat-ai-platform.git
-   cd chat-ai-platform
+   git clone https://github.com/JoachimTramper/Bamboo-Comms.git
+   cd Bamboo-Comms
    pnpm install
 
 2. Environment variables

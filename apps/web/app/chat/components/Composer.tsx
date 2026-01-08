@@ -139,7 +139,14 @@ export function Composer({
     setFiles((prev) => prev.filter((_, i) => i !== index));
   }
   return (
-    <div className="px-3 sm:px-4 py-2 bg-transparent">
+    <div
+      className="
+        py-2 bg-transparent
+        pl-[calc(0.75rem+env(safe-area-inset-left))]
+        pr-[calc(0.75rem+env(safe-area-inset-right))]
+        sm:px-4
+      "
+    >
       {/* Reply bar */}
       {replyTo && (
         <div className="mb-2 flex px-3 sm:px-4">

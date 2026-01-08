@@ -3,21 +3,33 @@ import { useState } from "react";
 import { login, register, me } from "@/lib/api";
 import { useRouter } from "next/navigation";
 
+const DISPLAYNAME_MAX = 32;
+
 export default function LoginPage() {
   const [email, setEmail] = useState("test@example.com");
   const [password, setPassword] = useState("supersecret");
   const [displayName, setDisplayName] = useState("Tester");
   const [mode, setMode] = useState<"login" | "register">("login");
   const [err, setErr] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
   const router = useRouter();
   const [inviteCode, setInviteCode] = useState("");
 
   async function submit(e?: React.FormEvent) {
     e?.preventDefault();
     setErr(null);
+    setSuccess(null);
+
     try {
       if (mode === "register") {
-        await register(email, password, displayName, inviteCode);
+        await register(
+          email,
+          password,
+          displayName.trim(),
+          inviteCode.trim() || undefined
+        );
+
+        setSuccess("Registered successfully. You can now sign in.");
         setMode("login");
         return;
       }
@@ -59,6 +71,7 @@ export default function LoginPage() {
               onChange={(e) => setEmail(e.target.value)}
               autoComplete="username"
             />
+
             <input
               className="border rounded w-full p-2"
               type="password"
@@ -67,15 +80,21 @@ export default function LoginPage() {
               onChange={(e) => setPassword(e.target.value)}
               autoComplete="current-password"
             />
+
             {mode === "register" && (
               <>
                 <input
                   className="border rounded w-full p-2"
                   placeholder="display name"
                   value={displayName}
+                  maxLength={DISPLAYNAME_MAX}
                   onChange={(e) => setDisplayName(e.target.value)}
+                  onBlur={() => setDisplayName((v) => v.trim())}
                   autoComplete="name"
                 />
+                <div className="text-[11px] text-neutral-500 text-right">
+                  {displayName.length}/{DISPLAYNAME_MAX}
+                </div>
 
                 <input
                   className="border rounded w-full p-2"
@@ -87,9 +106,12 @@ export default function LoginPage() {
             )}
           </div>
 
-          {err && <p className="text-red-600 text-sm">{err}</p>}
+          {success && (
+            <p className="text-green-600 text-sm text-center">{success}</p>
+          )}
 
-          {/* button type submit */}
+          {err && <p className="text-red-600 text-sm text-center">{err}</p>}
+
           <button
             type="submit"
             className="
@@ -113,7 +135,11 @@ export default function LoginPage() {
 
         <button
           type="button"
-          onClick={() => setMode(mode === "login" ? "register" : "login")}
+          onClick={() => {
+            setMode(mode === "login" ? "register" : "login");
+            setErr(null);
+            setSuccess(null);
+          }}
           className="text-sm underline w-full text-center"
         >
           {mode === "login" ? "Create an account" : "I already have an account"}

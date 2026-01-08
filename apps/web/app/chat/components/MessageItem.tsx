@@ -246,8 +246,8 @@ export function MessageItem({
               <div className="max-w-[92%] sm:max-w-[80%] relative inline-block">
                 <div
                   className={`
-                    inline-flex min-w-fit items-center max-w-full
-                    text-sm whitespace-pre-wrap
+                    inline-flex items-center max-w-full
+                    text-sm whitespace-pre-wrap break-words
                     px-3 py-2 rounded-2xl
                     transition-shadow
                     ${isMe ? "bg-teal-200 shadow" : "bg-white border border-gray-200 shadow"}
