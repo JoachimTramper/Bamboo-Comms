@@ -122,7 +122,7 @@ export function MessageList({
     <div
       ref={listRef}
       onScroll={onScroll}
-      className="flex-1 overflow-auto pt-16 md:pt-4 pb-20"
+      className={`flex-1 overflow-auto pt-16 ${isDirect ? "md:pt-14" : "md:pt-4"} pb-20 scrollbar-gutter-stable`}
     >
       <div
         className={
@@ -157,9 +157,16 @@ export function MessageList({
             const showDayDivider =
               !prev || dayKey(prev.createdAt) !== dayKey(m.createdAt);
 
-            const showSeen = isDirect && index === lastMySeenIndex;
             const isLastOwn =
               isDirect && m.authorId === meId && index === lastMyIndex;
+
+            const showSeen =
+              isDirect &&
+              m.authorId === meId &&
+              isLastOwn &&
+              lastReadIndex !== -1 &&
+              lastReadIndex >= lastMyIndex;
+
             const isHighlighted = highlightedId === m.id;
 
             return (

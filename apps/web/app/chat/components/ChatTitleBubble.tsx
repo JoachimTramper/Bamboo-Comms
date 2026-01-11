@@ -17,11 +17,11 @@ type Props = {
   dmPeer?: DmPeer | null;
 };
 
-export function MobileChatTitleBubble({ activeChannel, dmPeer }: Props) {
+export function ChatTitleBubble({ activeChannel, dmPeer }: Props) {
   const isDm = !!activeChannel?.isDirect && !!dmPeer;
 
   return (
-    <div className="md:hidden px-3 sm:px-4 py-2">
+    <div className="px-3 sm:px-4 py-2">
       <div className="flex justify-center">
         <div className="relative max-w-full">
           <div

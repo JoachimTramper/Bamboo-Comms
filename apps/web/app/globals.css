@@ -98,3 +98,8 @@ a {
 .animate-typingDot3 {
   animation: typingDot 1.4s infinite ease-in-out 0.3s;
 }
+
+/* Keeps the visual center stable even when a vertical scrollbar appears */
+.scrollbar-gutter-stable {
+  scrollbar-gutter: stable both-edges;
+}

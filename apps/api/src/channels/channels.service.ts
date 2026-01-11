@@ -87,7 +87,6 @@ export class ChannelsService {
       const lastMsg = await this.prisma.message.findFirst({
         where: {
           channelId,
-          NOT: { authorId: meId },
           deletedAt: null,
         },
         orderBy: { createdAt: 'desc' },
@@ -95,7 +94,8 @@ export class ChannelsService {
       });
 
       if (lastMsg) {
-        this.ws.server.emit('message.read', {
+        // emit only to sockets in this channel room
+        this.ws.server.to(`chan:${channelId}`).emit('message.read', {
           channelId,
           userId: meId,
           messageId: lastMsg.id,

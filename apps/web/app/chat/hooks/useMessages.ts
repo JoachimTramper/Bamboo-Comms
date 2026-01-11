@@ -61,6 +61,11 @@ export function useMessages(
     onIncomingRef.current = opts?.onIncomingMessage;
   }, [opts?.onIncomingMessage]);
 
+  // reset lastReadMessageIdByOthers on active change
+  useEffect(() => {
+    setLastReadMessageIdByOthers(null);
+  }, [active]);
+
   const snapshotForChannelRef = useRef<string | null>(null);
 
   // initial load

@@ -19,6 +19,7 @@ type Props = {
   meId: string;
   channelId: string;
   forceShow?: boolean;
+  isMine?: boolean;
 };
 
 const QUICK_EMOJIS = ["👍", "❤️", "😂", "🎉", "👀", "🔥"];
@@ -33,6 +34,7 @@ export function MessageReactionsBar({
   meId,
   channelId,
   forceShow = false,
+  isMine = false,
 }: Props) {
   const [loadingEmoji, setLoadingEmoji] = useState<string | null>(null);
 
@@ -97,7 +99,7 @@ export function MessageReactionsBar({
 
   // Floating UI for desktop picker (flip/shift)
   const { x, y, strategy, refs, update } = useFloating({
-    placement: "bottom-start",
+    placement: isMine ? "bottom-end" : "bottom-start",
     strategy: "fixed",
     middleware: [offset(6), flip(), shift({ padding: 8 })],
     whileElementsMounted: autoUpdate,
@@ -147,17 +149,33 @@ export function MessageReactionsBar({
   }, [pickerOpen, update]);
 
   return (
-    <div className="relative z-20 inline-flex flex-col items-start">
-      {/* REACTION CHIPS — geen outer bubble, wél wrap */}
+    <div
+      className={[
+        "relative z-20 inline-flex flex-col",
+        isMine ? "items-end" : "items-start",
+      ].join(" ")}
+    >
+      {/* REACTION CHIPS */}
       {showChips && (
-        <div className="flex flex-wrap items-center gap-1">
-          {grouped.map(({ emoji, count, mine }) => (
-            <button
-              key={emoji}
-              type="button"
-              onClick={() => toggleReaction(emoji)}
-              disabled={loadingEmoji === emoji}
-              className={`
+        <div
+          className={[
+            "flex w-full",
+            isMine ? "justify-end" : "justify-start",
+          ].join(" ")}
+        >
+          <div
+            className={[
+              "flex flex-wrap items-center gap-1 w-fit",
+              isMine ? "ml-auto" : "",
+            ].join(" ")}
+          >
+            {grouped.map(({ emoji, count, mine }) => (
+              <button
+                key={emoji}
+                type="button"
+                onClick={() => toggleReaction(emoji)}
+                disabled={loadingEmoji === emoji}
+                className={`
                 inline-flex items-center gap-1
                 rounded-full border
                 px-2 py-[2px]
@@ -170,18 +188,19 @@ export function MessageReactionsBar({
                     : "bg-white border-neutral-200 hover:bg-neutral-100"
                 }
               `}
-              title={mine ? "Remove reaction" : "Add reaction"}
-            >
-              <span className="text-[14px] leading-none">{emoji}</span>
-              <span className="text-[11px] text-neutral-600">{count}</span>
-            </button>
-          ))}
+                title={mine ? "Remove reaction" : "Add reaction"}
+              >
+                <span className="text-[14px] leading-none">{emoji}</span>
+                <span className="text-[11px] text-neutral-600">{count}</span>
+              </button>
+            ))}
+          </div>
         </div>
       )}
 
       {/* QUICK BAR */}
       <div
-        className={`w-full overflow-hidden transition-all duration-150 ${quickVisibilityClass}`}
+        className={`w-fit overflow-hidden transition-all duration-150 ${quickVisibilityClass} ${isMine ? "self-end" : "self-start"}`}
       >
         <div
           className="

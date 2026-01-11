@@ -110,88 +110,65 @@ export function ChatHeader({
   const isDm = !!activeChannel?.isDirect && !!dmPeer;
 
   return (
-    <>
-      <header className="relative z-40 border-b border-neutral-300 md:border-b-0 bg-neutral-200 backdrop-blur-sm px-3 sm:px-4 py-2 flex items-center">
-        {/* LEFT: hamburger (mobile) + desktop logo */}
-        <div className="flex items-center gap-2 min-w-0">
-          {/* mobile menu-button */}
-          <button
-            type="button"
-            className="md:hidden mr-1 h-8 w-8 flex items-center justify-center rounded hover:bg-neutral-100"
-            onClick={() => setSidebarOpen(!sidebarOpen)}
-            aria-label="Toggle sidebar"
-          >
-            <Menu size={20} className="text-neutral-700" />
-          </button>
+    <header className="relative z-40 border-b border-neutral-300 md:border-b-0 bg-neutral-200 backdrop-blur-sm px-3 sm:px-4 py-2 flex items-center md:grid md:grid-cols-[18rem_1fr] md:items-center">
+      {/* LEFT: hamburger (mobile) + desktop logo */}
+      <div className="flex items-center gap-2 min-w-0">
+        {/* mobile menu-button */}
+        <button
+          type="button"
+          className="md:hidden mr-1 h-8 w-8 flex items-center justify-center rounded hover:bg-neutral-100"
+          onClick={() => setSidebarOpen(!sidebarOpen)}
+          aria-label="Toggle sidebar"
+        >
+          <Menu size={20} className="text-neutral-700" />
+        </button>
 
-          {/* desktop logo + name (unchanged feel) */}
-          <Link
-            href="/chat"
-            className="hidden md:flex items-center gap-2 min-w-0"
-          >
-            <img
-              src="/LogoHeader.png"
-              alt="Bamboo Comms"
-              className="h-8 w-auto shrink-0"
-            />
-            <span className="font-bondi text-3xl font-medium tracking-wide text-neutral-800 truncate">
-              Bamboo Comms
-            </span>
-          </Link>
-        </div>
-
-        {/* MOBILE: centered logo (only on mobile) */}
+        {/* desktop logo + name */}
         <Link
           href="/chat"
-          className="md:hidden absolute left-1/2 -translate-x-1/2 flex items-center justify-center"
-          aria-label="Bamboo Comms"
+          className="hidden md:flex items-center gap-2 min-w-0"
         >
           <img
             src="/LogoHeader.png"
             alt="Bamboo Comms"
-            className="h-8 w-auto"
+            className="h-8 w-auto shrink-0"
           />
+          <span className="font-bondi text-3xl font-medium tracking-wide text-neutral-800 truncate">
+            Bamboo Comms
+          </span>
         </Link>
+      </div>
 
-        {/* DESKTOP ONLY: centered title (channel or DM) */}
-        <div
-          className="
-            hidden md:flex
-            absolute left-1/2 -translate-x-1/2
-            items-center gap-2
-            min-w-0 max-w-[62%] lg:max-w-[55%]
-            pointer-events-none
-            z-0
-          "
-        >
+      {/* MOBILE: centered logo (only on mobile) */}
+      <Link
+        href="/chat"
+        className="md:hidden absolute left-1/2 -translate-x-1/2 flex items-center justify-center"
+        aria-label="Bamboo Comms"
+      >
+        <img src="/LogoHeader.png" alt="Bamboo Comms" className="h-8 w-auto" />
+      </Link>
+
+      {/* RIGHT (col 2 on md+): title + controls */}
+      <div className="relative ml-auto flex items-center min-w-0 md:ml-0">
+        {/* DESKTOP ONLY: centered title (channel or DM avatar only) */}
+        <div className="hidden md:flex absolute left-1/2 -translate-x-1/2 items-center gap-2 min-w-0 max-w-[62%] lg:max-w-[55%] pointer-events-none z-0">
           {isDm ? (
-            <>
-              <div className="relative shrink-0">
-                <Avatar
-                  name={dmPeer!.displayName}
-                  avatarUrl={dmPeer!.avatarUrl}
-                  size={28}
-                />
-                <span
-                  className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border border-neutral-200 ${
-                    dmPeer!.isOnline
-                      ? dmPeer!.isIdle
-                        ? "bg-yellow-400"
-                        : "bg-green-500"
-                      : "bg-neutral-300"
-                  }`}
-                />
-              </div>
-
-              <div className="min-w-0 leading-tight text-center">
-                <div className="text-sm font-semibold truncate text-neutral-900">
-                  {dmPeer!.displayName}
-                </div>
-                <div className="text-[11px] text-neutral-500 truncate">
-                  {dmPeer!.statusText}
-                </div>
-              </div>
-            </>
+            <div className="relative shrink-0">
+              <Avatar
+                name={dmPeer!.displayName}
+                avatarUrl={dmPeer!.avatarUrl}
+                size={28}
+              />
+              <span
+                className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border border-neutral-200 ${
+                  dmPeer!.isOnline
+                    ? dmPeer!.isIdle
+                      ? "bg-yellow-400"
+                      : "bg-green-500"
+                    : "bg-neutral-300"
+                }`}
+              />
+            </div>
           ) : (
             <div className="min-w-0 text-center">
               <div className="text-sm font-semibold truncate text-neutral-900">
@@ -201,7 +178,7 @@ export function ChatHeader({
           )}
         </div>
 
-        {/* RIGHT: search + avatar + dropdown (unchanged) */}
+        {/* RIGHT: search + avatar + dropdown */}
         <div className="relative z-10 ml-auto flex items-center gap-2">
           <button
             type="button"
@@ -303,7 +280,7 @@ export function ChatHeader({
             )}
           </div>
         </div>
-      </header>
-    </>
+      </div>
+    </header>
   );
 }

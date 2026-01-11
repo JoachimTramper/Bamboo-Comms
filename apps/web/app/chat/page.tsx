@@ -32,7 +32,7 @@ import { Sidebar } from "./components/Sidebar";
 import { ChatHeader } from "./components/ChatHeader";
 import { TypingIndicator } from "./components/TypingIndicator";
 import { SearchModal } from "./components/SearchModal";
-import { MobileChatTitleBubble } from "./components/MobileChatTitleBubble";
+import { ChatTitleBubble } from "./components/ChatTitleBubble";
 
 import { useMessages } from "./hooks/useMessages";
 import { useTyping } from "./hooks/useTyping";
@@ -487,13 +487,27 @@ export default function ChatPage() {
         >
           {/* Scroll area (messages) */}
           <div className="flex-1 min-h-0 relative z-20">
-            {/* MOBILE ONLY: overlay title bubble */}
-            <div className="md:hidden absolute top-0 left-0 right-0 z-40">
-              <MobileChatTitleBubble
-                activeChannel={activeChannel}
-                dmPeer={dmPeer}
-              />
-            </div>
+            {/* Title bubble overlay:
+                - Mobile: always (channels + DMs)
+                - Desktop: only for DMs */}
+            {(activeChannel?.isDirect ?? false) ? (
+              // DM: show on all sizes
+              <div className="absolute top-0 left-0 right-0 z-40">
+                <ChatTitleBubble
+                  activeChannel={activeChannel}
+                  dmPeer={dmPeer}
+                />
+              </div>
+            ) : (
+              // Channel: only on mobile
+              <div className="md:hidden absolute top-0 left-0 right-0 z-40">
+                <ChatTitleBubble
+                  activeChannel={activeChannel}
+                  dmPeer={dmPeer}
+                />
+              </div>
+            )}
+
             {/* Messages scroll behind it */}
             <div className="h-full flex flex-col">
               <MessageList

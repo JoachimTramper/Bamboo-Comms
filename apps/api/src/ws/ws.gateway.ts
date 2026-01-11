@@ -348,6 +348,51 @@ export class WsGateway
     client.join(`chan:${channelId}`);
     client.join(`view:${channelId}`);
 
+    // --- HYDRATE READ STATE FOR DMs (so Seen survives relog) ---
+    const ch = await this.prisma.channel.findUnique({
+      where: { id: channelId },
+      select: {
+        isDirect: true,
+        members: { select: { id: true } },
+      },
+    });
+
+    if (ch?.isDirect) {
+      const otherId = ch.members.find((m) => m.id !== u.sub)?.id;
+
+      if (otherId) {
+        const otherRead = await this.prisma.channelRead.findUnique({
+          where: { userId_channelId: { userId: otherId, channelId } },
+          select: { lastRead: true },
+        });
+
+        if (otherRead?.lastRead) {
+          const lastReadMsg = await this.prisma.message.findFirst({
+            where: {
+              channelId,
+              deletedAt: null,
+              createdAt: { lte: otherRead.lastRead },
+            },
+            orderBy: { createdAt: 'desc' },
+            select: { id: true },
+          });
+
+          if (lastReadMsg) {
+            // send snapshot ONLY to the joining client
+            client.emit('message.read', {
+              channelId,
+              userId: otherId,
+              messageId: lastReadMsg.id,
+              at: otherRead.lastRead.toISOString(),
+            });
+          }
+        }
+      }
+
+      // IMPORTANT: stop here for DMs (do not run GENERAL logic)
+      return { ok: true };
+    }
+
     // keep your GENERAL membership connect if you want unread to work
     if (channelId === GENERAL_CHANNEL_ID) {
       await this.prisma.channel

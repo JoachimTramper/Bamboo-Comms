@@ -29,7 +29,7 @@ https://bamboo-comms.joachimtramper.dev
 - Backend: NestJS + Prisma ORM
 - Database: PostgreSQL (Docker)
 - Realtime: WebSockets (Socket.IO)
-- Monorepo: Turborepo (pnpm workspaces)
+- Monorepo: pnpm workspaces
 
 ---
 
@@ -193,8 +193,11 @@ The bot is designed as a lightweight, non-intrusive assistant that enhances the 
 
 ## Useful Commands
 
-- Run all apps with Turbo:
-  pnpm run dev
+- Backend (NestJS):
+  pnpm start:dev
+
+- Frontend (Next.js):
+  pnpm --filter web dev
 
 - Backend only:
   pnpm -F api start:dev

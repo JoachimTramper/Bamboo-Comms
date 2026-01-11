@@ -146,7 +146,6 @@ export function Sidebar({
           <h3
             className="
           font-semibold text-xs uppercase tracking-wide text-neutral-500
-          transition-all duration-150 hover:-translate-y-0.5 hover:shadow-md
           "
           >
             Direct Messages
