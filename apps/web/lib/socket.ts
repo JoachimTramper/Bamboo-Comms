@@ -21,7 +21,6 @@ function buildSocket(): Socket {
   // - No extra Authorization header (prevents session leaking between tabs)
   // - auth.token should be the raw JWT (no "Bearer " prefix)
   return io(url, {
-    transports: ["websocket"],
     autoConnect: false,
     auth: { token: getToken() || "" },
   });

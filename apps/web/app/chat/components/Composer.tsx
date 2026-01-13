@@ -59,7 +59,7 @@ export function Composer({
 
     if (q === "") {
       setMentionQuery("");
-      setShowMentionList(true); // only '@' → show all candidates
+      setShowMentionList(true);
       return;
     }
 

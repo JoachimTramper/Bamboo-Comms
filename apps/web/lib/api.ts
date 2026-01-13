@@ -1,10 +1,11 @@
-// lib/api.ts
+// apps/web/lib/api.ts
 import axios from "axios";
 import { refreshSocketAuth } from "@/lib/socket";
 import type { Message } from "@/app/chat/types";
 
 const api = axios.create({
   baseURL: process.env.NEXT_PUBLIC_API_BASE || "http://localhost:3000",
+  withCredentials: true,
 });
 
 const TOKEN_KEY = "accessToken";
@@ -13,21 +14,26 @@ let CURRENT_TOKEN: string | null = null; // per-tab in-memory cache
 // ---- Token helpers ----
 export function setToken(token: string | null) {
   CURRENT_TOKEN = token;
+
   if (typeof window !== "undefined") {
     if (token) sessionStorage.setItem(TOKEN_KEY, token);
     else sessionStorage.removeItem(TOKEN_KEY);
   }
+
   api.defaults.headers.common.Authorization = token ? `Bearer ${token}` : "";
+
   // keep socket auth in sync
   refreshSocketAuth(token);
 }
 
 export function getToken() {
   if (CURRENT_TOKEN) return CURRENT_TOKEN;
+
   if (typeof window !== "undefined") {
     CURRENT_TOKEN = sessionStorage.getItem(TOKEN_KEY);
     return CURRENT_TOKEN;
   }
+
   return null;
 }
 
@@ -45,12 +51,68 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Auto logout on 401
+// ---- Silent refresh (401 -> refresh -> retry) ----
+let refreshPromise: Promise<string | null> | null = null;
+
+async function refreshAccessToken(): Promise<string | null> {
+  // backend uses HttpOnly refresh cookie
+  const { data } = await api.post("/auth/refresh");
+  const next = (data?.accessToken as string | undefined) ?? null;
+  setToken(next);
+  return next;
+}
+
 api.interceptors.response.use(
   (r) => r,
-  (err) => {
-    if (err?.response?.status === 401) setToken(null);
-    return Promise.reject(err);
+  async (err) => {
+    const status = err?.response?.status;
+    const original = err?.config;
+
+    // No config or not 401 => normal error
+    if (!original || status !== 401) return Promise.reject(err);
+
+    // Do not retry refresh call itself
+    const url: string = original.url || "";
+    const isRefreshCall = url.includes("/auth/refresh");
+    if (isRefreshCall) {
+      setToken(null);
+      return Promise.reject(err);
+    }
+
+    // Prevent infinite retry loops
+    if ((original as any)._retry) {
+      setToken(null);
+      return Promise.reject(err);
+    }
+    (original as any)._retry = true;
+
+    try {
+      // single-flight refresh: multiple 401s at the same time => 1 refresh request
+      if (!refreshPromise) {
+        refreshPromise = (async () => {
+          try {
+            return await refreshAccessToken();
+          } finally {
+            refreshPromise = null;
+          }
+        })();
+      }
+
+      const newToken = await refreshPromise;
+
+      if (!newToken) {
+        setToken(null);
+        return Promise.reject(err);
+      }
+
+      // Retry original reuest with new token
+      original.headers = original.headers ?? {};
+      original.headers.Authorization = `Bearer ${newToken}`;
+      return api.request(original);
+    } catch (e) {
+      setToken(null);
+      return Promise.reject(e);
+    }
   }
 );
 
@@ -67,13 +129,17 @@ export async function register(
     displayName,
     inviteCode: inviteCode?.trim() || undefined,
   });
-  setToken(data.accessToken);
+
+  if (data?.accessToken) setToken(data.accessToken);
+
   return data;
 }
 
 export async function login(email: string, password: string) {
   const { data } = await api.post("/auth/login", { email, password });
-  setToken(data.accessToken);
+
+  if (data?.accessToken) setToken(data.accessToken);
+
   return data;
 }
 
@@ -84,7 +150,6 @@ export type MeResponse = {
   avatarUrl: string | null;
   emailVerifiedAt: string | null;
   role: "USER" | "ADMIN";
-
   bot?: {
     id: string;
     displayName: string;
@@ -98,14 +163,7 @@ export async function me() {
 }
 
 export async function updateAvatar() {
-  const token = getToken();
-
-  const { data } = await api.patch(
-    "/auth/me/avatar",
-    undefined,
-    token ? { headers: { Authorization: `Bearer ${token}` } } : undefined
-  );
-
+  const { data } = await api.patch("/auth/me/avatar");
   return data as MeResponse;
 }
 
@@ -114,15 +172,16 @@ export async function uploadAvatarFile(file: File) {
   form.append("file", file);
 
   const { data } = await api.post("/auth/me/avatar/upload", form, {
-    headers: {
-      "Content-Type": "multipart/form-data",
-    },
+    headers: { "Content-Type": "multipart/form-data" },
   });
 
   return data as MeResponse;
 }
 
-export function logout() {
+export async function logout() {
+  try {
+    await api.post("/auth/logout");
+  } catch {}
   setToken(null);
 }
 
@@ -188,17 +247,14 @@ export async function sendMessage(
   return data as Message;
 }
 
-// Explicitly pass Authorization for PATCH/DELETE to avoid any interceptor/import drift.
 export async function updateMessage(
   channelId: string,
   messageId: string,
   content: string
 ) {
-  const token = getToken();
   const { data } = await api.patch(
     `/channels/${channelId}/messages/${messageId}`,
-    { content },
-    token ? { headers: { Authorization: `Bearer ${token}` } } : undefined
+    { content }
   );
   return data as {
     id: string;
@@ -211,11 +267,7 @@ export async function updateMessage(
 }
 
 export async function deleteMessage(channelId: string, messageId: string) {
-  const token = getToken();
-  await api.delete(
-    `/channels/${channelId}/messages/${messageId}`,
-    token ? { headers: { Authorization: `Bearer ${token}` } } : undefined
-  );
+  await api.delete(`/channels/${channelId}/messages/${messageId}`);
 }
 
 // reactions
@@ -236,7 +288,6 @@ export async function unreactToMessage(
   messageId: string,
   emoji: string
 ) {
-  // axios DELETE with body → via { data: ... }
   const { data } = await api.delete(
     `/channels/${channelId}/messages/${messageId}/reactions`,
     { data: { emoji } }
@@ -250,9 +301,7 @@ export async function uploadMessageFile(file: File) {
   form.append("file", file);
 
   const { data } = await api.post("/uploads/message", form, {
-    headers: {
-      "Content-Type": "multipart/form-data",
-    },
+    headers: { "Content-Type": "multipart/form-data" },
   });
 
   return data as {

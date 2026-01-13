@@ -9,6 +9,7 @@ type Props = {
   onDelete: () => void;
   onReply: () => void;
   onCloseMenu: () => void;
+  menuRef?: React.RefObject<HTMLDivElement | null>;
 };
 
 export function MessageActions({
@@ -20,6 +21,7 @@ export function MessageActions({
   onDelete,
   onReply,
   onCloseMenu,
+  menuRef,
 }: Props) {
   if (isDeleted) return null;
 
@@ -44,7 +46,10 @@ export function MessageActions({
 
       {/* mobile long-press menu */}
       {menuOpen && (
-        <div className="md:hidden mt-1 inline-flex gap-2 text-xs text-gray-700 bg-white border rounded shadow px-2 py-1 z-10">
+        <div
+          ref={menuRef}
+          className="md:hidden mt-1 inline-flex gap-2 text-xs text-gray-700 bg-white border rounded shadow px-2 py-1 z-10"
+        >
           {isMine && !failed && (
             <>
               <button
