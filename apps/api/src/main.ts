@@ -1,8 +1,11 @@
+// apps/api/src/main.ts
+
 import * as nodeCrypto from 'crypto';
 if (!(globalThis as any).crypto) {
   (globalThis as any).crypto = nodeCrypto;
 }
 
+import cookieParser from 'cookie-parser';
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
@@ -15,6 +18,12 @@ import { join } from 'path';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
+
+  // If you're behind a proxy / load balancer (common in prod), this helps secure cookies + IP handling
+  app.set('trust proxy', 1);
+
+  // Needed for req.cookies (refresh cookie)
+  app.use(cookieParser());
 
   app.useGlobalPipes(
     new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true }),
@@ -29,6 +38,7 @@ async function bootstrap() {
     credentials: true,
   });
 
+  // Allow images/files to be embedded cross-origin (avatars etc.)
   app.use('/uploads', (_req, res, next) => {
     res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
     next();
@@ -39,8 +49,9 @@ async function bootstrap() {
   mkdirSync(avatarsDir, { recursive: true });
 
   const botTarget = join(avatarsDir, 'bamboobob.png');
+  const repoRoot = process.env.INIT_CWD ?? process.cwd();
   const botSource = join(
-    process.cwd(),
+    repoRoot,
     'apps',
     'api',
     'src',

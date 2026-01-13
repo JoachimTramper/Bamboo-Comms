@@ -79,7 +79,9 @@ export class AuthService {
 
         await this.users.ensureGeneralMembership(user.id);
 
-        return { ok: true, bypassedEmailVerification: true };
+        const tokens = this.issueTokens(user.id, user.email);
+
+        return { ok: true, bypassedEmailVerification: true, ...tokens };
       }
 
       // Normal flow: create + send verify email

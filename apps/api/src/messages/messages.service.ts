@@ -8,7 +8,6 @@ import { PrismaService } from '../prisma/prisma.service';
 import { WsGateway } from '../ws/ws.gateway';
 import { AiBotService } from '../bot/ai-bot.service';
 import { formatHistoryLine } from '../bot/ai-bot.format';
-import { GENERAL_CHANNEL_ID } from '../channels.constants';
 
 const MAX_MESSAGE_LEN = 5000;
 
@@ -352,7 +351,13 @@ export class MessagesService {
 
     const text = (msg.content ?? '').trim();
     const isCommand = text.startsWith('!');
-    const isGeneral = msg.channelId === GENERAL_CHANNEL_ID;
+    const chMeta = await this.prisma.channel.findUnique({
+      where: { id: msg.channelId },
+      select: { name: true, isDirect: true },
+    });
+
+    const isGeneral = chMeta?.name === 'general' && chMeta?.isDirect === false;
+
     const botMentionedInSavedMsg = msg.mentions?.some(
       (m) => (m as any).userId === botId || m.user?.id === botId,
     );
@@ -694,6 +699,17 @@ export class MessagesService {
       data: { content: cleanContent },
       select: { id: true, channelId: true, content: true, updatedAt: true },
     });
+
+    // realtime update
+    this.ws.server
+      .to(`chan:${updated.channelId}`)
+      .to(`view:${updated.channelId}`)
+      .emit('message.updated', {
+        id: updated.id,
+        channelId: updated.channelId,
+        content: updated.content,
+        updatedAt: updated.updatedAt.toISOString(),
+      });
 
     // realtime: minimal payload is enough
     this.ws.server.to(`chan:${channelId}`).emit('message.updated', {

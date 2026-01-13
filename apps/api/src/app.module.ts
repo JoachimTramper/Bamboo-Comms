@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { ScheduleModule } from '@nestjs/schedule';
+import { join } from 'path';
 
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
@@ -11,11 +13,19 @@ import { MessagesModule } from './messages/messages.module';
 import { WsModule } from './ws/ws.module';
 import { UploadsModule } from './uploads/uploads.module';
 import { DigestModule } from './digest/digest.module';
-import { ScheduleModule } from '@nestjs/schedule';
+
+const repoRoot = process.env.INIT_CWD ?? process.cwd();
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true }),
+    ConfigModule.forRoot({
+      isGlobal: true,
+      envFilePath: [
+        join(process.cwd(), '.env'),
+        join(repoRoot, 'apps', 'api', '.env'),
+        join(repoRoot, '.env'),
+      ],
+    }),
     PrismaModule,
     AuthModule,
     UsersModule,
@@ -25,18 +35,8 @@ import { ScheduleModule } from '@nestjs/schedule';
     UploadsModule,
     DigestModule,
     ScheduleModule.forRoot(),
-    ThrottlerModule.forRoot([
-      {
-        ttl: 60,
-        limit: 100,
-      },
-    ]),
+    ThrottlerModule.forRoot([{ ttl: 60, limit: 100 }]),
   ],
-  providers: [
-    {
-      provide: APP_GUARD,
-      useClass: ThrottlerGuard,
-    },
-  ],
+  providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
 export class AppModule {}

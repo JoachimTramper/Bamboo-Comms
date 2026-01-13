@@ -10,7 +10,10 @@ import {
   UploadedFile,
   UseInterceptors,
   Query,
+  Req,
+  Res,
 } from '@nestjs/common';
+import type { Request, Response } from 'express';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
@@ -36,6 +39,20 @@ const AVATAR_ALLOWED = new Set([
   'image/gif',
 ]);
 
+const REFRESH_COOKIE = 'refreshToken';
+
+function getCookieOptions(req: Request) {
+  const isProd = process.env.NODE_ENV === 'production';
+
+  return {
+    httpOnly: true,
+    secure: isProd,
+    sameSite: (isProd ? 'none' : 'lax') as 'none' | 'lax',
+    path: '/auth/refresh',
+    maxAge: 7 * 24 * 60 * 60 * 1000,
+  };
+}
+
 @Controller('auth')
 export class AuthController {
   constructor(
@@ -46,25 +63,66 @@ export class AuthController {
 
   @Throttle({ default: { limit: 4, ttl: 60 } })
   @Post('register')
-  register(@Body() dto: RegisterDto) {
-    return this.auth.register(
+  async register(
+    @Body() dto: RegisterDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const out: any = await this.auth.register(
       dto.email,
       dto.password,
       dto.displayName,
       dto.inviteCode,
     );
+
+    if (out?.refreshToken) {
+      res.cookie(REFRESH_COOKIE, out.refreshToken, getCookieOptions(req));
+      delete out.refreshToken;
+    }
+
+    return out;
   }
 
   @Throttle({ default: { limit: 5, ttl: 60 } })
   @Post('login')
-  login(@Body() dto: LoginDto) {
-    return this.auth.login(dto.email, dto.password);
+  async login(
+    @Body() dto: LoginDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const { accessToken, refreshToken } = await this.auth.login(
+      dto.email,
+      dto.password,
+    );
+
+    res.cookie(REFRESH_COOKIE, refreshToken, getCookieOptions(req));
+
+    return { accessToken };
   }
 
   @Throttle({ default: { limit: 10, ttl: 60 } })
   @Post('refresh')
-  refresh(@Body('refreshToken') token: string) {
-    return this.auth.refresh(token);
+  async refresh(
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const token = req.cookies?.[REFRESH_COOKIE];
+    if (!token) throw new BadRequestException('Missing refresh cookie');
+
+    const { accessToken, refreshToken } = await this.auth.refresh(token);
+
+    res.cookie(REFRESH_COOKIE, refreshToken, getCookieOptions(req));
+
+    return { accessToken };
+  }
+
+  @Post('logout')
+  logout(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    res.clearCookie(REFRESH_COOKIE, {
+      ...getCookieOptions(req),
+      maxAge: 0,
+    });
+    return { ok: true };
   }
 
   @Throttle({ default: { limit: 20, ttl: 60 } })
@@ -126,7 +184,6 @@ export class AuthController {
   @Patch('me/avatar')
   async clearMyAvatar(@User() user: any) {
     const updated = await this.usersService.updateAvatar(user.sub, null);
-
     return {
       sub: updated.id,
       email: updated.email,
@@ -154,9 +211,7 @@ export class AuthController {
           cb(null, name);
         },
       }),
-      limits: {
-        fileSize: 2 * 1024 * 1024, // 2MB
-      },
+      limits: { fileSize: 2 * 1024 * 1024 },
     }),
   )
   async uploadMyAvatar(
@@ -164,7 +219,6 @@ export class AuthController {
     @UploadedFile() file: Express.Multer.File,
   ) {
     const avatarUrl = `/uploads/avatars/${file.filename}`;
-
     const updated = await this.usersService.updateAvatar(user.sub, avatarUrl);
 
     return {

@@ -13,7 +13,6 @@ import { PrismaService } from '../prisma/prisma.service';
 import { JwtService } from '@nestjs/jwt';
 import { PresenceService } from './presence.service';
 import { OnModuleInit, OnModuleDestroy } from '@nestjs/common';
-import { GENERAL_CHANNEL_ID } from '../channels.constants';
 
 type JwtPayload = { sub: string; email: string };
 type PresenceStatus = 'online' | 'idle' | 'offline';
@@ -81,6 +80,14 @@ export class WsGateway
 
   // ---- helpers ----
 
+  private async isGeneralChannel(channelId: string) {
+    const ch = await this.prisma.channel.findUnique({
+      where: { id: channelId },
+      select: { name: true, isDirect: true },
+    });
+    return ch?.name === 'general' && ch?.isDirect === false;
+  }
+
   private async getUserSafe(userId: string) {
     return this.prisma.user.findUnique({
       where: { id: userId },
@@ -94,7 +101,7 @@ export class WsGateway
   }
 
   private async canAccessChannel(channelId: string, userId: string) {
-    if (channelId === GENERAL_CHANNEL_ID) return true;
+    if (await this.isGeneralChannel(channelId)) return true;
 
     const ch = await this.prisma.channel.findUnique({
       where: { id: channelId },
@@ -393,8 +400,10 @@ export class WsGateway
       return { ok: true };
     }
 
+    const isGeneral = await this.isGeneralChannel(channelId);
+
     // keep your GENERAL membership connect if you want unread to work
-    if (channelId === GENERAL_CHANNEL_ID) {
+    if (isGeneral) {
       await this.prisma.channel
         .update({
           where: { id: channelId },
@@ -404,7 +413,7 @@ export class WsGateway
     }
 
     // welcome logic only in general
-    if (channelId !== GENERAL_CHANNEL_ID) return { ok: true };
+    if (!isGeneral) return { ok: true };
 
     // quick per-connection guard
     const key = `${channelId}:${u.sub}`;
