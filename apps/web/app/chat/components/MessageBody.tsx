@@ -166,66 +166,81 @@ export function MessageBody({
     <>
       {ReplyPreview}
 
-      {/* bubble + ticks + reactions */}
-      <div
-        className={`w-full mt-1 flex flex-col gap-[2px] ${
-          isDmMine ? "items-end" : "items-start"
-        }`}
-      >
-        {/* bubble row */}
+      <div ref={menuRef}>
+        {/* bubble + ticks + reactions */}
         <div
-          className={`flex items-end gap-2 ${
-            isDmMine ? "justify-end" : "justify-start"
+          className={`w-full mt-1 flex flex-col gap-[2px] ${
+            isDmMine ? "items-end" : "items-start"
           }`}
         >
-          {/* Sent/Seen */}
-          {isDirect && isDmMine && !!isLastOwn && (
-            <div className="text-[11px] text-gray-400 flex items-center gap-1 shrink-0 mb-1">
-              <span aria-hidden>{showSeen ? "✓✓" : "✓"}</span>
-              <span className="hidden sm:inline">
-                {showSeen ? "Seen" : "Sent"}
-              </span>
-            </div>
-          )}
+          {/* bubble row */}
+          <div
+            className={`flex items-end gap-2 ${
+              isDmMine ? "justify-end" : "justify-start"
+            }`}
+          >
+            {/* Sent/Seen */}
+            {isDirect && isDmMine && !!isLastOwn && (
+              <div className="text-[11px] text-gray-400 flex items-center gap-1 shrink-0 mb-1">
+                <span aria-hidden>{showSeen ? "✓✓" : "✓"}</span>
+                <span className="hidden sm:inline">
+                  {showSeen ? "Seen" : "Sent"}
+                </span>
+              </div>
+            )}
 
-          {/* bubble */}
+            {/* bubble */}
+            <div
+              className={[
+                "inline-flex w-fit max-w-full",
+                "text-sm whitespace-pre-wrap break-words",
+                "px-3 py-2 rounded-2xl transition-shadow",
+                "text-neutral-900",
+                isMine
+                  ? "bg-teal-200 shadow"
+                  : "bg-white border border-gray-200 shadow",
+              ].join(" ")}
+            >
+              {m.content}
+              {isEdited && (
+                <span className="ml-2 text-xs text-gray-400 italic">
+                  (edited)
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* reactions row */}
           <div
             className={[
-              "inline-flex w-fit max-w-full",
-              "text-sm whitespace-pre-wrap break-words",
-              "px-3 py-2 rounded-2xl transition-shadow",
-              isMine
-                ? "bg-teal-200 shadow"
-                : "bg-white border border-gray-200 shadow",
+              "mt-[2px] flex overflow-hidden transition-[max-height,opacity] duration-150",
+              isDmMine ? "justify-end" : "justify-start",
+              menuOpen || hasReactions
+                ? "max-h-24 opacity-100"
+                : "max-h-0 opacity-0 md:group-hover:max-h-24 md:group-hover:opacity-100",
             ].join(" ")}
           >
-            {m.content}
-            {isEdited && (
-              <span className="ml-2 text-xs text-gray-400 italic">
-                (edited)
-              </span>
-            )}
+            <MessageReactionsBar
+              message={m}
+              meId={meId}
+              channelId={channelId}
+              forceShow={menuOpen}
+              isMine={isDmMine}
+            />
           </div>
         </div>
 
-        {/* reactions row */}
-        <div
-          className={[
-            "mt-[2px] flex overflow-hidden transition-[max-height,opacity] duration-150",
-            isDmMine ? "justify-end" : "justify-start",
-            menuOpen || hasReactions
-              ? "max-h-24 opacity-100"
-              : "max-h-0 opacity-0 md:group-hover:max-h-24 md:group-hover:opacity-100",
-          ].join(" ")}
-        >
-          <MessageReactionsBar
-            message={m}
-            meId={meId}
-            channelId={channelId}
-            forceShow={menuOpen}
-            isMine={isDmMine}
-          />
-        </div>
+        {/* actions */}
+        <MessageActions
+          isMine={isMine}
+          isDeleted={false}
+          failed={m.failed}
+          menuOpen={menuOpen}
+          onStartEdit={onStartEdit}
+          onDelete={onDelete}
+          onReply={onReply}
+          onCloseMenu={closeMenu}
+        />
       </div>
 
       {/* Attachments */}
@@ -280,19 +295,6 @@ export function MessageBody({
           })}
         </div>
       ) : null}
-
-      {/* actions */}
-      <MessageActions
-        isMine={isMine}
-        isDeleted={false}
-        failed={m.failed}
-        menuOpen={menuOpen}
-        onStartEdit={onStartEdit}
-        onDelete={onDelete}
-        onReply={onReply}
-        onCloseMenu={closeMenu}
-        menuRef={menuRef}
-      />
     </>
   );
 }
