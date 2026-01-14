@@ -6,9 +6,9 @@ import { useRouter } from "next/navigation";
 const DISPLAYNAME_MAX = 32;
 
 export default function LoginPage() {
-  const [email, setEmail] = useState("test@example.com");
-  const [password, setPassword] = useState("supersecret");
-  const [displayName, setDisplayName] = useState("Tester");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [displayName, setDisplayName] = useState("");
   const [mode, setMode] = useState<"login" | "register">("login");
   const [err, setErr] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
