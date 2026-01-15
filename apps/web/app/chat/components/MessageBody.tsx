@@ -162,6 +162,9 @@ export function MessageBody({
   }
 
   // ---- Normal content ----
+  const hasText = !!m.content?.trim();
+  const hasAttachments = (m.attachments?.length ?? 0) > 0;
+
   return (
     <>
       {ReplyPreview}
@@ -189,44 +192,27 @@ export function MessageBody({
               </div>
             )}
 
-            {/* bubble */}
-            <div
-              className={[
-                "inline-flex w-fit max-w-full",
-                "text-sm whitespace-pre-wrap break-words",
-                "px-3 py-2 rounded-2xl transition-shadow",
-                "text-neutral-900",
-                isMine
-                  ? "bg-teal-200 shadow"
-                  : "bg-white border border-gray-200 shadow",
-              ].join(" ")}
-            >
-              {m.content}
-              {isEdited && (
-                <span className="ml-2 text-xs text-gray-400 italic">
-                  (edited)
-                </span>
-              )}
-            </div>
-          </div>
-
-          {/* reactions row */}
-          <div
-            className={[
-              "mt-[2px] flex overflow-hidden transition-[max-height,opacity] duration-150",
-              isDmMine ? "justify-end" : "justify-start",
-              menuOpen || hasReactions
-                ? "max-h-24 opacity-100"
-                : "max-h-0 opacity-0 md:group-hover:max-h-24 md:group-hover:opacity-100",
-            ].join(" ")}
-          >
-            <MessageReactionsBar
-              message={m}
-              meId={meId}
-              channelId={channelId}
-              forceShow={menuOpen}
-              isMine={isDmMine}
-            />
+            {/* bubble (only if there is text) */}
+            {hasText && (
+              <div
+                className={[
+                  "inline-flex w-fit max-w-full",
+                  "text-sm whitespace-pre-wrap break-words",
+                  "px-3 py-2 rounded-2xl transition-shadow",
+                  "text-neutral-900",
+                  isMine
+                    ? "bg-teal-200 shadow"
+                    : "bg-white border border-gray-200 shadow",
+                ].join(" ")}
+              >
+                {m.content}
+                {isEdited && (
+                  <span className="ml-2 text-xs text-gray-400 italic">
+                    (edited)
+                  </span>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
@@ -244,13 +230,13 @@ export function MessageBody({
       </div>
 
       {/* Attachments */}
-      {m.attachments?.length ? (
+      {hasAttachments ? (
         <div
           className={`w-full mt-2 flex flex-col gap-1 ${
             isDmMine ? "items-end" : "items-start"
           }`}
         >
-          {m.attachments.map((att) => {
+          {m.attachments!.map((att) => {
             const isImage = att.mimeType.startsWith("image/");
             const url = resolveFileUrl(att.url);
 
@@ -295,6 +281,25 @@ export function MessageBody({
           })}
         </div>
       ) : null}
+
+      {/* reactions row (always below text + attachments) */}
+      {!isDeleted && !m.failed && (menuOpen || hasReactions) && (
+        <div
+          className={[
+            hasAttachments ? "mt-2" : "mt-1",
+            "flex transition-[max-height,opacity] duration-150 overflow-hidden",
+            isDmMine ? "justify-end" : "justify-start",
+          ].join(" ")}
+        >
+          <MessageReactionsBar
+            message={m}
+            meId={meId}
+            channelId={channelId}
+            forceShow={menuOpen}
+            isMine={isDmMine}
+          />
+        </div>
+      )}
     </>
   );
 }
