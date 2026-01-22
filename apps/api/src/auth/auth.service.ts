@@ -4,6 +4,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { OAuth2Client } from 'google-auth-library';
 import { UsersService } from '../users/users.service';
 import * as bcrypt from 'bcrypt';
 import { randomBytes, createHash } from 'crypto';
@@ -11,6 +12,10 @@ import { JwtService } from '@nestjs/jwt';
 import { MailService } from '../mail/mail.service';
 
 const DISPLAYNAME_MAX = 32;
+
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
+
+const googleClient = new OAuth2Client(GOOGLE_CLIENT_ID);
 
 function makeToken() {
   return randomBytes(32).toString('hex');
@@ -144,6 +149,11 @@ export class AuthService {
     const user = await this.users.findByEmail(email.trim().toLowerCase());
     if (!user) throw new UnauthorizedException('Invalid credentials');
 
+    if (!user.passwordHash) {
+      // Google-only account
+      throw new UnauthorizedException('Use Google login');
+    }
+
     const ok = await bcrypt.compare(password, user.passwordHash);
     if (!ok) throw new UnauthorizedException('Invalid credentials');
 
@@ -207,5 +217,100 @@ export class AuthService {
       { expiresIn: '7d', secret: process.env.JWT_SECRET },
     );
     return { accessToken, refreshToken };
+  }
+
+  private async makeUniqueDisplayName(seed?: string) {
+    // normalize base
+    const base =
+      (seed ?? 'user')
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9_-]+/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/^-|-$/g, '')
+        .slice(0, 20) || 'user';
+
+    // try up to 10 times to find a unique variant
+    for (let i = 0; i < 10; i++) {
+      const suffix = randomBytes(3).toString('hex'); // 6 chars
+      const candidate = `${base}-${suffix}`.slice(0, 32);
+
+      const exists = await this.users.findByDisplayName?.(candidate);
+      // if UsersService doesn't have a findByDisplayName method: implement in step 5
+      if (!exists) return candidate;
+    }
+
+    // fallback
+    return `user-${randomBytes(4).toString('hex')}`.slice(0, 32);
+  }
+
+  async googleLogin(credential: string) {
+    if (!GOOGLE_CLIENT_ID) {
+      throw new BadRequestException('Missing GOOGLE_CLIENT_ID');
+    }
+
+    // 1) Verify ID token
+    const ticket = await googleClient.verifyIdToken({
+      idToken: credential,
+      audience: GOOGLE_CLIENT_ID,
+    });
+
+    const payload = ticket.getPayload();
+    if (!payload) throw new UnauthorizedException('Invalid Google token');
+
+    const googleSub = payload.sub;
+    const email = (payload.email ?? '').trim().toLowerCase();
+    const emailVerified = payload.email_verified === true;
+    const name = payload.name ?? '';
+    const picture = payload.picture ?? null;
+
+    if (!googleSub) throw new UnauthorizedException('Missing Google sub');
+    if (!email) throw new UnauthorizedException('Missing Google email');
+
+    // 2) Find existing user: first by googleSub, else by email (link)
+    let user = await this.users.findByGoogleSub(googleSub);
+
+    let needsUsername = false;
+
+    if (!user) {
+      const existingByEmail = await this.users.findByEmail(email);
+
+      if (existingByEmail) {
+        // Link Google to existing account
+        user = await this.users.linkGoogleSub(existingByEmail.id, googleSub, {
+          avatarUrl: picture,
+          // if you still use email verification: set verified
+          emailVerifiedAt: emailVerified
+            ? new Date()
+            : existingByEmail.emailVerifiedAt,
+        });
+      } else {
+        // Create new user
+        const displayName = await this.makeUniqueDisplayName(name);
+        needsUsername = true;
+
+        user = await this.users.create({
+          email,
+          passwordHash: null, // google-only
+          displayName,
+          avatarUrl: picture ?? undefined,
+          emailVerifiedAt: emailVerified ? new Date() : undefined,
+        });
+      }
+    } else {
+      // Optional: update avatar/verified
+      user =
+        (await this.users.touchGoogleProfile?.(user.id, {
+          avatarUrl: picture,
+          emailVerifiedAt: emailVerified ? new Date() : user.emailVerifiedAt,
+        })) ?? user;
+    }
+
+    // 3) Ensure memberships etc.
+    await this.users.ensureGeneralMembership(user.id);
+
+    // 4) Issue tokens
+    const tokens = this.issueTokens(user.id, user.email);
+    return { ...tokens, needsUsername };
   }
 }

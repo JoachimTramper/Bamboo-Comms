@@ -15,8 +15,11 @@ enum Role {
 model User {
   id              String        @id @default(cuid())
   email           String        @unique
-  passwordHash    String
+  passwordHash    String?
   displayName     String        @unique @db.VarChar(32)
+
+  googleSub       String?       @unique
+
   role            Role          @default(USER)
   createdAt       DateTime      @default(now())
   emailVerifiedAt DateTime?
@@ -30,6 +33,7 @@ model User {
   reactions       MessageReaction[]
   mentions        MessageMention[]
 }
+
 
 model Channel {
   id            String                @id @default(cuid())

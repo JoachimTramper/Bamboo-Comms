@@ -19,6 +19,7 @@ import {
   updateAvatar,
   uploadAvatarFile,
   uploadMessageFile,
+  updateDisplayName,
 } from "@/lib/api";
 import {
   ensureNotificationPermission,
@@ -71,7 +72,7 @@ export default function ChatPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [replyTo, setReplyTo] = useState<ReplyTarget | null>(null);
   const [scrollToMessageId, setScrollToMessageId] = useState<string | null>(
-    null
+    null,
   );
   const [searchOpen, setSearchOpen] = useState(false);
 
@@ -161,7 +162,7 @@ export default function ChatPage() {
 
     // 4) DM members (if present on channels)
     channels.forEach((c) =>
-      c.members?.forEach((m) => map.set(m.id, m.displayName))
+      c.members?.forEach((m) => map.set(m.id, m.displayName)),
     );
 
     idToNameRef.current = map;
@@ -211,7 +212,7 @@ export default function ChatPage() {
   // helpers
   const canSend = useMemo(
     () => Boolean(user?.sub && active && text.trim()),
-    [user, active, text]
+    [user, active, text],
   );
 
   async function onCreateChannel() {
@@ -234,7 +235,7 @@ export default function ChatPage() {
     const hasText = trimmed.length > 0;
     const hasFiles = files.length > 0;
 
-    // Niets te versturen → stoppen
+    // Nothing to send → stop
     if (!hasText && !hasFiles) return;
 
     try {
@@ -250,7 +251,7 @@ export default function ChatPage() {
 
       if (files.length > 0) {
         const uploaded = await Promise.all(
-          files.map((f) => uploadMessageFile(f))
+          files.map((f) => uploadMessageFile(f)),
         );
 
         attachments = uploaded.map((a) => ({
@@ -261,12 +262,12 @@ export default function ChatPage() {
         }));
       }
 
-      // 2) Message versturen via hook, NIET direct sendMessage
+      // 2) Message send via hook, NOT direct sendMessage
       await send(
         trimmed || undefined,
         replyTo?.id ?? undefined,
         mentions,
-        attachments
+        attachments,
       );
 
       setText("");
@@ -351,7 +352,7 @@ export default function ChatPage() {
                 isDirect: true,
                 members: dm.members ?? [],
               } as ChannelWithUnread,
-            ]
+            ],
       );
       setActive(dm.id);
     } catch (e) {
@@ -380,6 +381,20 @@ export default function ChatPage() {
       setUser(updated as Me);
     } catch (err) {
       console.error("Failed to remove avatar:", err);
+    }
+  }
+
+  async function handleChangeUsername(nextDisplayName: string) {
+    const dn = (nextDisplayName ?? "").trim();
+    if (!dn) return;
+
+    try {
+      const updated = await updateDisplayName(dn);
+      setUser(updated as Me);
+    } catch (e: any) {
+      alert(
+        e?.response?.data?.message || e?.message || "Failed to change username",
+      );
     }
   }
 
@@ -426,6 +441,7 @@ export default function ChatPage() {
         dmPeer={dmPeer}
         onEnableNotifications={() => ensureNotificationPermission()}
         onOpenSearch={() => setSearchOpen(true)}
+        onChangeUsername={handleChangeUsername}
       />
       {/* main layout */}
       <div className="flex-1 min-h-0 flex relative md:bg-neutral-200">

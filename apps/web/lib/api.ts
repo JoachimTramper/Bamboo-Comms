@@ -113,7 +113,7 @@ api.interceptors.response.use(
       setToken(null);
       return Promise.reject(e);
     }
-  }
+  },
 );
 
 // ---- Auth ----
@@ -121,7 +121,7 @@ export async function register(
   email: string,
   password: string,
   displayName: string,
-  inviteCode?: string
+  inviteCode?: string,
 ) {
   const { data } = await api.post("/auth/register", {
     email,
@@ -167,6 +167,11 @@ export async function updateAvatar() {
   return data as MeResponse;
 }
 
+export async function updateDisplayName(displayName: string) {
+  const { data } = await api.patch("/auth/me/display-name", { displayName });
+  return data as MeResponse;
+}
+
 export async function uploadAvatarFile(file: File) {
   const form = new FormData();
   form.append("file", file);
@@ -185,6 +190,14 @@ export async function logout() {
   setToken(null);
 }
 
+export async function loginWithGoogle(credential: string) {
+  const { data } = await api.post("/auth/google", { credential });
+
+  if (data?.accessToken) setToken(data.accessToken);
+
+  return data as { accessToken: string; needsUsername?: boolean };
+}
+
 // ---- Channels & Messages ----
 export async function listChannels() {
   const { data } = await api.get("/channels");
@@ -198,7 +211,7 @@ export async function createChannel(name: string) {
 
 export async function listMessages(
   channelId: string,
-  opts?: { take?: number; cursor?: string }
+  opts?: { take?: number; cursor?: string },
 ): Promise<Message[]> {
   const params = new URLSearchParams();
   if (opts?.take) params.set("take", String(opts.take));
@@ -206,7 +219,7 @@ export async function listMessages(
 
   const qs = params.toString();
   const { data } = await api.get(
-    `/channels/${channelId}/messages${qs ? `?${qs}` : ""}`
+    `/channels/${channelId}/messages${qs ? `?${qs}` : ""}`,
   );
   return data as Message[];
 }
@@ -214,7 +227,7 @@ export async function listMessages(
 // Search messages in a channel
 export async function searchMessages(
   channelId: string,
-  opts: { query: string; take?: number; cursor?: string }
+  opts: { query: string; take?: number; cursor?: string },
 ): Promise<Message[]> {
   const params = new URLSearchParams();
   params.set("query", opts.query);
@@ -223,7 +236,7 @@ export async function searchMessages(
 
   const qs = params.toString();
   const { data } = await api.get(
-    `/channels/${channelId}/messages/search${qs ? `?${qs}` : ""}`
+    `/channels/${channelId}/messages/search${qs ? `?${qs}` : ""}`,
   );
 
   return data as Message[];
@@ -235,7 +248,7 @@ export async function sendMessage(
   replyToMessageId?: string,
   mentionUserIds: string[] = [],
   attachments: Array<any> = [],
-  lastReadOverride?: string | null
+  lastReadOverride?: string | null,
 ) {
   const { data } = await api.post(`/channels/${channelId}/messages`, {
     content,
@@ -250,11 +263,11 @@ export async function sendMessage(
 export async function updateMessage(
   channelId: string,
   messageId: string,
-  content: string
+  content: string,
 ) {
   const { data } = await api.patch(
     `/channels/${channelId}/messages/${messageId}`,
-    { content }
+    { content },
   );
   return data as {
     id: string;
@@ -274,11 +287,11 @@ export async function deleteMessage(channelId: string, messageId: string) {
 export async function reactToMessage(
   channelId: string,
   messageId: string,
-  emoji: string
+  emoji: string,
 ) {
   const { data } = await api.post(
     `/channels/${channelId}/messages/${messageId}/reactions`,
-    { emoji }
+    { emoji },
   );
   return data as { ok: true };
 }
@@ -286,11 +299,11 @@ export async function reactToMessage(
 export async function unreactToMessage(
   channelId: string,
   messageId: string,
-  emoji: string
+  emoji: string,
 ) {
   const { data } = await api.delete(
     `/channels/${channelId}/messages/${messageId}/reactions`,
-    { data: { emoji } }
+    { data: { emoji } },
   );
   return data as { ok: true } | undefined;
 }

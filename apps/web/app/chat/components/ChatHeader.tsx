@@ -29,6 +29,7 @@ type Props = {
   dmPeer?: DmPeer | null;
   onEnableNotifications: () => void;
   onOpenSearch: () => void;
+  onChangeUsername: (nextDisplayName: string) => Promise<void> | void;
 };
 
 export function ChatHeader({
@@ -44,6 +45,7 @@ export function ChatHeader({
   dmPeer,
   onEnableNotifications,
   onOpenSearch,
+  onChangeUsername,
 }: Props) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -63,6 +65,15 @@ export function ChatHeader({
 
   function toggleMenu() {
     setMenuOpen((v) => !v);
+  }
+
+  function handleChangeUsernameClick() {
+    const next = prompt("New username?", user.displayName) ?? "";
+    const trimmed = next.trim();
+    if (!trimmed) return;
+
+    onChangeUsername(trimmed);
+    setMenuOpen(false);
   }
 
   function handleChangeAvatar() {
@@ -244,6 +255,14 @@ export function ChatHeader({
                     {user.displayName}
                   </div>
                 </div>
+
+                <button
+                  type="button"
+                  onClick={handleChangeUsernameClick}
+                  className="w-full text-left px-3 py-2 hover:bg-neutral-50 text-xs text-neutral-700"
+                >
+                  Change username
+                </button>
 
                 <button
                   type="button"

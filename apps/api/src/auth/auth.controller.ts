@@ -17,6 +17,8 @@ import type { Request, Response } from 'express';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
+import { GoogleLoginDto } from './dto/google-login.dto';
+import { UpdateDisplayNameDto } from './dto/display-name.dto';
 import { AuthGuard } from '@nestjs/passport';
 import { User } from './decorators/user.decorator';
 import { PrismaService } from '../prisma/prisma.service';
@@ -101,6 +103,19 @@ export class AuthController {
   }
 
   @Throttle({ default: { limit: 10, ttl: 60 } })
+  @Post('google')
+  async googleLogin(
+    @Body() dto: GoogleLoginDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const out = await this.auth.googleLogin(dto.credential);
+
+    res.cookie(REFRESH_COOKIE, out.refreshToken, getCookieOptions(req));
+    return { accessToken: out.accessToken, needsUsername: out.needsUsername };
+  }
+
+  @Throttle({ default: { limit: 10, ttl: 60 } })
   @Post('refresh')
   async refresh(
     @Req() req: Request,
@@ -178,6 +193,35 @@ export class AuthController {
       role: dbUser?.role,
       bot: bot ?? null,
     };
+  }
+
+  @UseGuards(AuthGuard('jwt'))
+  @Patch('me/display-name')
+  async updateMyDisplayName(
+    @User() user: any,
+    @Body() dto: UpdateDisplayNameDto,
+  ) {
+    const dn = (dto.displayName ?? '').trim();
+
+    if (!dn) throw new BadRequestException('Display name is required');
+    if (dn.length > 32) throw new BadRequestException('Display name too long');
+
+    try {
+      const updated = await this.usersService.updateDisplayName(user.sub, dn);
+      return {
+        sub: updated.id,
+        email: updated.email,
+        displayName: updated.displayName,
+        avatarUrl: updated.avatarUrl,
+        emailVerifiedAt: updated.emailVerifiedAt,
+        role: updated.role,
+      };
+    } catch (e: any) {
+      if (e?.code === 'P2002') {
+        throw new BadRequestException('Username already taken');
+      }
+      throw e;
+    }
   }
 
   @UseGuards(AuthGuard('jwt'))

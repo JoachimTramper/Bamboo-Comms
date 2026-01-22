@@ -1,6 +1,7 @@
 "use client";
-import { useState } from "react";
-import { login, register, me } from "@/lib/api";
+
+import { useEffect, useRef, useState } from "react";
+import { loginWithGoogle, login, register, me } from "@/lib/api";
 import { useRouter } from "next/navigation";
 
 const DISPLAYNAME_MAX = 32;
@@ -12,8 +13,84 @@ export default function LoginPage() {
   const [mode, setMode] = useState<"login" | "register">("login");
   const [err, setErr] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const router = useRouter();
   const [inviteCode, setInviteCode] = useState("");
+  const router = useRouter();
+
+  const googleBtnRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    // Only show Google button on login mode
+    if (mode !== "login") return;
+
+    // Ensure client id exists
+    const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+    if (!clientId) {
+      setErr("Missing NEXT_PUBLIC_GOOGLE_CLIENT_ID");
+      return;
+    }
+
+    // If script already loaded, just init
+    const existing = document.getElementById("google-gsi");
+    if (existing) {
+      initGoogle(clientId);
+      return;
+    }
+
+    // Load Google Identity Services script once
+    const script = document.createElement("script");
+    script.src = "https://accounts.google.com/gsi/client";
+    script.async = true;
+    script.defer = true;
+    script.id = "google-gsi";
+    script.onload = () => initGoogle(clientId);
+    document.body.appendChild(script);
+
+    function initGoogle(cid: string) {
+      // @ts-ignore
+      if (!window.google || !googleBtnRef.current) return;
+
+      // Clear prior rendered button (helps in dev/StrictMode and mode toggles)
+      googleBtnRef.current.innerHTML = "";
+
+      try {
+        // @ts-ignore
+        window.google.accounts.id.cancel?.();
+      } catch {}
+
+      // @ts-ignore
+      window.google.accounts.id.initialize({
+        client_id: cid,
+        callback: async (resp: any) => {
+          try {
+            setErr(null);
+            setSuccess(null);
+
+            const { needsUsername } = await loginWithGoogle(resp.credential);
+            await me();
+
+            if (needsUsername) {
+              router.push("/choose-username"); // change if your route differs
+            } else {
+              router.push("/chat");
+            }
+          } catch (e: any) {
+            setErr(
+              e?.response?.data?.message || e?.message || "Google login failed",
+            );
+          }
+        },
+      });
+
+      // @ts-ignore
+      window.google.accounts.id.renderButton(googleBtnRef.current, {
+        theme: "outline",
+        size: "large",
+        width: 320,
+        shape: "pill",
+        text: "continue_with",
+      });
+    }
+  }, [mode, router]);
 
   async function submit(e?: React.FormEvent) {
     e?.preventDefault();
@@ -26,7 +103,7 @@ export default function LoginPage() {
           email,
           password,
           displayName.trim(),
-          inviteCode.trim() || undefined
+          inviteCode.trim() || undefined,
         );
 
         setSuccess("Registered successfully. You can now sign in.");
@@ -131,6 +208,20 @@ export default function LoginPage() {
           >
             {mode === "register" ? "Create account" : "Sign in"}
           </button>
+
+          {mode === "login" && (
+            <div className="w-full flex flex-col gap-3 mt-4">
+              <div className="flex items-center gap-3">
+                <div className="h-px bg-black/20 flex-1" />
+                <span className="text-xs text-black/60">or</span>
+                <div className="h-px bg-black/20 flex-1" />
+              </div>
+
+              <div className="flex justify-center">
+                <div ref={googleBtnRef} />
+              </div>
+            </div>
+          )}
         </form>
 
         <button

@@ -21,11 +21,28 @@ export class UsersService {
 
   create(data: {
     email: string;
-    passwordHash: string;
+    passwordHash?: string | null;
     displayName: string;
+    avatarUrl?: string | null;
     emailVerifiedAt?: Date | null;
+    googleSub?: string | null;
   }) {
     return this.db.user.create({ data });
+  }
+
+  async updateDisplayName(userId: string, displayName: string) {
+    return this.db.user.update({
+      where: { id: userId },
+      data: { displayName },
+      select: {
+        id: true,
+        email: true,
+        displayName: true,
+        avatarUrl: true,
+        emailVerifiedAt: true,
+        role: true,
+      },
+    });
   }
 
   async updateAvatar(userId: string, avatarUrl: string | null) {
@@ -89,6 +106,45 @@ export class UsersService {
     });
   }
 
+  // GOOGLE LOGIN
+  async findByGoogleSub(googleSub: string) {
+    return this.prisma.user.findUnique({ where: { googleSub } });
+  }
+
+  async findByDisplayName(displayName: string) {
+    return this.prisma.user.findUnique({ where: { displayName } });
+  }
+
+  async linkGoogleSub(
+    userId: string,
+    googleSub: string,
+    opts?: { avatarUrl?: string | null; emailVerifiedAt?: Date | null },
+  ) {
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        googleSub,
+        avatarUrl: opts?.avatarUrl ?? undefined,
+        emailVerifiedAt: opts?.emailVerifiedAt ?? undefined,
+      },
+    });
+  }
+
+  // update profile info from Google on each login
+  async touchGoogleProfile(
+    userId: string,
+    opts: { avatarUrl?: string | null; emailVerifiedAt?: Date | null },
+  ) {
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        avatarUrl: opts.avatarUrl ?? undefined,
+        emailVerifiedAt: opts.emailVerifiedAt ?? undefined,
+      },
+    });
+  }
+
+  // USER DELETION
   async deleteUser(userId: string) {
     return this.db.$transaction(async (tx) => {
       await tx.emailVerificationToken
