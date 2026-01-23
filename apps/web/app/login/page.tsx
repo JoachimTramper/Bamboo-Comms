@@ -175,7 +175,7 @@ export default function LoginPage() {
 
                 <input
                   className="border rounded w-full p-2"
-                  placeholder="Invite Code (Optional)"
+                  placeholder="Invite Code"
                   value={inviteCode}
                   onChange={(e) => setInviteCode(e.target.value)}
                 />
