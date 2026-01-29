@@ -121,7 +121,7 @@ export function ChatHeader({
   const isDm = !!activeChannel?.isDirect && !!dmPeer;
 
   return (
-    <header className="relative z-40 border-b border-neutral-300 md:border-b-0 bg-neutral-200 backdrop-blur-sm px-3 sm:px-4 py-2 flex items-center md:grid md:grid-cols-[18rem_1fr] md:items-center">
+    <header className="relative z-40 border-b border-stone-200 md:border-b-0 bg-stone-100 px-3 sm:px-4 py-2 flex items-center md:grid md:grid-cols-[18rem_1fr] md:items-center">
       {/* LEFT: hamburger (mobile) + desktop logo */}
       <div className="flex items-center gap-2 min-w-0">
         {/* mobile menu-button */}

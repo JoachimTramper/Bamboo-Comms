@@ -444,7 +444,7 @@ export default function ChatPage() {
         onChangeUsername={handleChangeUsername}
       />
       {/* main layout */}
-      <div className="flex-1 min-h-0 flex relative md:bg-neutral-200">
+      <div className="flex-1 min-h-0 flex relative md:bg-stone-100">
         {/* Mobile backdrop */}
         {sidebarOpen && (
           <div
@@ -456,11 +456,11 @@ export default function ChatPage() {
         {/* Sidebar */}
         <div
           className={`
-            absolute inset-y-0 left-0 z-50 w-64 bg-neutral-200
+            absolute inset-y-0 left-0 z-50 w-64 bg-stone-100
             transform transition-transform duration-200 ease-out
             ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}
-            md:static md:translate-x-0 md:w-72 md:bg-neutral-200 md:h-full md:block
-            border-r border-neutral-300/50 md:border-r-0
+            md:static md:translate-x-0 md:w-72 md:bg-stone-100 md:h-full md:block
+            border-r border-stone-200 md:border-r-0
           `}
         >
           <Sidebar

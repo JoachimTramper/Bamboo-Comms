@@ -71,7 +71,7 @@ export function Sidebar({
       <div className="space-y-3">
         {/* Channels */}
         <section>
-          <h2 className="font-semibold text-xs uppercase tracking-wide text-neutral-500">
+          <h2 className="font-semibold text-xs uppercase tracking-wide text-neutral-800">
             Channels
           </h2>
           {isAdmin && (
@@ -145,7 +145,7 @@ export function Sidebar({
         <section>
           <h3
             className="
-          font-semibold text-xs uppercase tracking-wide text-neutral-500
+          font-semibold text-xs uppercase tracking-wide text-neutral-800
           "
           >
             Direct Messages
@@ -244,7 +244,7 @@ export function Sidebar({
 
       {/* Online */}
       <div className="mt-3">
-        <h3 className="font-semibold text-xs uppercase tracking-wide text-neutral-500">
+        <h3 className="font-semibold text-xs uppercase tracking-wide text-neutral-800">
           Online ({othersOnline.length})
         </h3>
         <div className="mt-1 space-y-0.5">
@@ -282,7 +282,7 @@ export function Sidebar({
 
       {/* Offline */}
       <div className="mt-3">
-        <h3 className="font-semibold text-xs uppercase tracking-wide text-neutral-500">
+        <h3 className="font-semibold text-xs uppercase tracking-wide text-neutral-800">
           Offline ({recently.length})
         </h3>
         <div className="mt-1 space-y-0.5">
@@ -303,7 +303,7 @@ export function Sidebar({
                       avatarUrl={u.avatarUrl ?? null}
                       size={22}
                     />
-                    <span className="font-medium text-neutral-800">
+                    <span className="font-medium text-neutral-500">
                       {u.displayName}
                     </span>
                   </div>
