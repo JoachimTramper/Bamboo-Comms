@@ -100,7 +100,12 @@ export function MessageItem({
       const target = e.target as Node | null;
       if (!target) return;
 
+      // click inside the long-press menu itself
       if (menuRef.current?.contains(target)) return;
+
+      // click inside reactions / emoji picker safe zones
+      const el = target as HTMLElement;
+      if (el.closest?.('[data-menu-safe="true"]')) return;
 
       closeMenu();
     };

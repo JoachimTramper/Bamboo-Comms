@@ -5,22 +5,22 @@ import { AI_BOT_NAME } from './ai-bot.constants';
 import { parseBotIntent, resolveBotMode } from './ai-bot.intent';
 import { formatHistoryLine } from './ai-bot.format';
 import { DigestService } from '../digest/digest.service';
-
-type ChatMsg = { role: 'system' | 'user' | 'assistant'; content: string };
+import {
+  AiChatClient,
+  type AiChatErrorKey,
+  type AiLang,
+  type ChatMsg,
+} from './ai-bot.client';
 
 @Injectable()
 export class AiBotService {
   constructor(
     private prisma: PrismaService,
     private digest: DigestService,
+    private aiChat: AiChatClient,
   ) {}
 
-  private readonly baseUrl =
-    process.env.GROQ_BASE_URL?.replace(/\/$/, '') ||
-    'https://api.groq.com/openai/v1';
-
-  private readonly model = process.env.GROQ_MODEL || 'llama-3.1-8b-instant';
-  private readonly apiKey = process.env.GROQ_API_KEY || '';
+  private readonly logger = new Logger(AiBotService.name);
 
   private readonly systemPrompt = [
     `You are ${AI_BOT_NAME}, a helpful assistant inside a chat application.`,
@@ -69,8 +69,6 @@ export class AiBotService {
     return bot?.id ?? null;
   }
 
-  private readonly logger = new Logger(AiBotService.name);
-
   private readonly throttle = new Map<string, number>();
 
   private throttleKey(meta?: {
@@ -109,6 +107,7 @@ export class AiBotService {
       payload.lastReadOverride ?? payload.lastRead ?? null;
 
     if (!text) return null;
+
     const botId = await this.getBotUserId();
     if (botId && payload.authorId === botId) return null;
 
@@ -116,6 +115,7 @@ export class AiBotService {
     if (text.startsWith('!')) {
       const parts = text.slice(1).trim().split(/\s+/);
       const cmd = (parts[0] ?? '').toLowerCase();
+
       switch (cmd) {
         case 'help':
           return {
@@ -253,7 +253,7 @@ export class AiBotService {
     // 2) No command: only respond when bot is mentioned
     if (!payload.isBotMentioned) return null;
 
-    if (!this.apiKey) {
+    if (!this.aiChat.hasApiKey()) {
       return { reply: 'Groq API key missing.' };
     }
 
@@ -332,11 +332,15 @@ export class AiBotService {
       };
     }
 
-    const reply = await this.groqChat(messages, {
-      mode,
-      channelId: payload.channelId,
-      userText: intent.cleaned,
-    });
+    const reply = await this.aiChat.chat(
+      messages,
+      {
+        mode,
+        channelId: payload.channelId,
+        userText: intent.cleaned,
+      },
+      (lang: AiLang, key: AiChatErrorKey) => this.msg(lang, key),
+    );
 
     return { reply };
   }
@@ -368,7 +372,7 @@ export class AiBotService {
     return context.map((m) => formatHistoryLine(m as any)).join('\n');
   }
 
-  private pickLang(userText?: string) {
+  private pickLang(userText?: string): AiLang {
     const t = (userText ?? '').toLowerCase();
     // super simpele heuristiek is prima
     const nlHints = [
@@ -383,7 +387,7 @@ export class AiBotService {
     return nlHints.some((h) => t.includes(h)) ? 'nl' : 'en';
   }
 
-  private msg(lang: 'nl' | 'en', key: string) {
+  private msg(lang: AiLang, key: AiChatErrorKey) {
     const M = {
       nl: {
         notConfigured: 'AI is niet goed geconfigureerd (API key ongeldig).',
@@ -407,123 +411,11 @@ export class AiBotService {
     return (M as any)[lang][key] as string;
   }
 
-  private safeSnippet(s: string, max = 300) {
-    const t = (s ?? '').replace(/\s+/g, ' ').trim();
-    return t.length > max ? t.slice(0, max) + '…' : t;
-  }
-
-  private async groqChat(
-    messages: ChatMsg[],
-    meta?: {
-      mode?: string;
-      channelId?: string;
-      authorId?: string;
-      userText?: string;
-    },
-  ): Promise<string> {
-    const url = `${this.baseUrl}/chat/completions`;
-    const started = Date.now();
-
-    const lang = this.pickLang(meta?.userText);
-
-    this.logger.log(
-      `groq.request mode=${meta?.mode ?? 'unknown'} channel=${meta?.channelId ?? '-'} msgs=${messages.length}`,
-    );
-
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15_000);
-
-    try {
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${this.apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: this.model,
-          messages,
-          temperature: 0.2,
-          max_tokens: 300,
-        }),
-        signal: controller.signal,
-      });
-
-      const ms = Date.now() - started;
-
-      if (!res.ok) {
-        // try to read body, but safely truncate
-        const bodyTxt = await res.text().catch(() => '');
-        const snippet = this.safeSnippet(bodyTxt);
-
-        // (optional) Sentry: capture with tags
-        // Sentry.captureMessage('groq.http_error', { level: 'warning', tags: { status: String(res.status), mode: meta?.mode ?? 'unknown' }, extra: { channelId: meta?.channelId, snippet } });
-
-        if (res.status === 401 || res.status === 403) {
-          this.logger.error(
-            `groq.auth_error status=${res.status} ms=${ms} body="${snippet}"`,
-          );
-          return this.msg(lang, 'notConfigured');
-        }
-
-        if (res.status === 429) {
-          this.logger.warn(`groq.rate_limited ms=${ms} body="${snippet}"`);
-          return this.msg(lang, 'rateLimited');
-        }
-
-        if (res.status >= 500) {
-          this.logger.warn(
-            `groq.server_error status=${res.status} ms=${ms} body="${snippet}"`,
-          );
-          return this.msg(lang, 'unavailable');
-        }
-
-        // other 4xx
-        this.logger.error(
-          `groq.http_error status=${res.status} ms=${ms} body="${snippet}"`,
-        );
-        return this.msg(lang, 'generic');
-      }
-
-      const data: any = await res.json();
-      const reply =
-        data?.choices?.[0]?.message?.content?.trim() ??
-        (lang === 'nl'
-          ? 'Sorry, ik kreeg geen antwoord terug.'
-          : 'Sorry, I did not receive a response.');
-
-      this.logger.log(
-        `groq.success mode=${meta?.mode ?? 'unknown'} channel=${meta?.channelId ?? '-'} ms=${ms}`,
-      );
-
-      return reply;
-    } catch (e: any) {
-      const ms = Date.now() - started;
-
-      if (e?.name === 'AbortError') {
-        this.logger.warn(
-          `groq.timeout mode=${meta?.mode ?? 'unknown'} channel=${meta?.channelId ?? '-'} ms=${ms}`,
-        );
-        // (optional) Sentry.captureException(e, { tags: { kind: 'timeout', mode: meta?.mode ?? 'unknown' }, extra: { channelId: meta?.channelId } });
-        return this.msg(lang, 'timeout');
-      }
-
-      this.logger.error(
-        `groq.fail mode=${meta?.mode ?? 'unknown'} channel=${meta?.channelId ?? '-'} ms=${ms} err=${String(e)}`,
-      );
-      // (optional) Sentry.captureException(e, { tags: { kind: 'exception', mode: meta?.mode ?? 'unknown' }, extra: { channelId: meta?.channelId } });
-
-      return this.msg(lang, 'generic');
-    } finally {
-      clearTimeout(timeout);
-    }
-  }
-
   async generateDigestForChannel(
     channelId: string,
     hours = 24,
   ): Promise<string> {
-    if (!this.apiKey) {
+    if (!this.aiChat.hasApiKey()) {
       return 'Groq API key missing.';
     }
 
@@ -540,10 +432,10 @@ export class AiBotService {
       },
     ];
 
-    return this.groqChat(messages, {
-      mode: 'digest',
-      channelId,
-      userText: 'digest',
-    });
+    return this.aiChat.chat(
+      messages,
+      { mode: 'digest', channelId, userText: 'digest' },
+      (lang: AiLang, key: AiChatErrorKey) => this.msg(lang, key),
+    );
   }
 }

@@ -169,7 +169,7 @@ export function MessageBody({
     <>
       {ReplyPreview}
 
-      <div ref={menuRef}>
+      <div ref={menuRef} className="group">
         {/* bubble + ticks + reactions */}
         <div
           className={`w-full mt-1 flex flex-col gap-[2px] ${
@@ -282,14 +282,19 @@ export function MessageBody({
         </div>
       ) : null}
 
-      {/* reactions row (always below text + attachments) */}
-      {!isDeleted && !m.failed && (menuOpen || hasReactions) && (
+      {/* reactions row (below text + attachments) */}
+      {!isDeleted && !m.failed && (
         <div
+          data-menu-safe="true"
           className={[
             hasAttachments ? "mt-2" : "mt-1",
-            "flex transition-[max-height,opacity] duration-150 overflow-hidden",
+            // only show space when open/has reactions on mobile,
+            // desktop visibility is handled inside the bar via group-hover
+            menuOpen || hasReactions ? "flex" : "hidden md:flex",
             isDmMine ? "justify-end" : "justify-start",
           ].join(" ")}
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
         >
           <MessageReactionsBar
             message={m}

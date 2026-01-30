@@ -5,9 +5,9 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { WsGateway } from '../ws/ws.gateway';
-import { AiBotService } from '../bot/ai-bot.service';
-import { formatHistoryLine } from '../bot/ai-bot.format';
+import { MessagesRealtime } from './messages.realtime';
+import { MessagesBotOrchestrator } from './messages.bot';
+import { MESSAGE_INCLUDE_FULL } from './messages.queries';
 
 const MAX_MESSAGE_LEN = 5000;
 
@@ -15,9 +15,35 @@ const MAX_MESSAGE_LEN = 5000;
 export class MessagesService {
   constructor(
     private prisma: PrismaService,
-    private ws: WsGateway,
-    private aiBot: AiBotService,
+    private rt: MessagesRealtime,
+    private bot: MessagesBotOrchestrator,
   ) {}
+
+  // ---------------------------
+  // Helpers
+  // ---------------------------
+
+  private page(take = 50, cursor?: string) {
+    const safeTake = Math.min(Math.max(take, 1), 100);
+    return {
+      take: safeTake,
+      ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
+    };
+  }
+
+  private guardMessageLen(content?: string) {
+    const clean = (content ?? '').trim();
+    if (clean.length > MAX_MESSAGE_LEN) {
+      throw new ForbiddenException(
+        `Message too long (max ${MAX_MESSAGE_LEN} chars)`,
+      );
+    }
+    return clean;
+  }
+
+  private cleanIds(ids: string[]) {
+    return Array.from(new Set(ids)).filter(Boolean);
+  }
 
   private async getBotUserId() {
     const bot = await this.prisma.user.findFirst({
@@ -27,611 +53,22 @@ export class MessagesService {
     return bot?.id ?? null;
   }
 
-  async list(channelId: string, userId: string, take = 50, cursor?: string) {
-    await this.assertCanAccessChannel(channelId, userId);
-
-    const safeTake = Math.min(Math.max(take, 1), 100);
-
-    return this.prisma.message.findMany({
-      where: { channelId },
-      orderBy: { createdAt: 'desc' },
-      take: safeTake,
-      ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
-      include: {
-        author: {
-          select: {
-            id: true,
-            displayName: true,
-            avatarUrl: true,
-          },
-        },
-        deletedBy: {
-          select: {
-            id: true,
-            displayName: true,
-            avatarUrl: true,
-          },
-        },
-
-        parent: {
-          select: {
-            id: true,
-            content: true,
-            author: {
-              select: { id: true, displayName: true },
-            },
-          },
-        },
-
-        reactions: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                displayName: true,
-                avatarUrl: true,
-              },
-            },
-          },
-        },
-
-        mentions: {
-          select: {
-            userId: true,
-            user: {
-              select: {
-                id: true,
-                displayName: true,
-                avatarUrl: true,
-              },
-            },
-          },
-        },
-        attachments: true,
-      },
-    });
-  }
-
-  async search(
+  private async resolveParentId(
     channelId: string,
-    userId: string,
-    query: string,
-    take = 50,
-    cursor?: string,
-  ) {
-    await this.assertCanAccessChannel(channelId, userId);
-
-    const safeTake = Math.min(Math.max(take, 1), 100);
-
-    return this.prisma.message.findMany({
-      where: {
-        channelId,
-        deletedAt: null, // exclude soft-deleted
-        content: {
-          not: null,
-          contains: query,
-          mode: 'insensitive',
-        },
-      },
-      orderBy: { createdAt: 'desc' },
-      take: safeTake,
-      ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
-      include: {
-        author: {
-          select: {
-            id: true,
-            displayName: true,
-            avatarUrl: true,
-          },
-        },
-        deletedBy: {
-          select: {
-            id: true,
-            displayName: true,
-            avatarUrl: true,
-          },
-        },
-        parent: {
-          select: {
-            id: true,
-            content: true,
-            author: {
-              select: { id: true, displayName: true },
-            },
-          },
-        },
-        reactions: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                displayName: true,
-                avatarUrl: true,
-              },
-            },
-          },
-        },
-        mentions: {
-          select: {
-            userId: true,
-            user: {
-              select: {
-                id: true,
-                displayName: true,
-                avatarUrl: true,
-              },
-            },
-          },
-        },
-      },
-    });
-  }
-
-  async create(
-    channelId: string,
-    authorId: string,
-    content?: string,
     replyToMessageId?: string,
-    mentionUserIds: string[] = [],
-    attachments: {
-      url: string;
-      fileName: string;
-      mimeType: string;
-      size: number;
-    }[] = [],
-    lastReadOverride?: string | null,
-  ) {
-    // 1) access control (BESTAAT + MEMBERSHIP)
-    await this.assertCanAccessChannel(channelId, authorId);
+  ): Promise<string | undefined> {
+    if (!replyToMessageId) return undefined;
 
-    // 1b) content length guard
-    const cleanContent = (content ?? '').trim();
-    if (cleanContent.length > MAX_MESSAGE_LEN) {
-      throw new ForbiddenException(
-        `Message too long (max ${MAX_MESSAGE_LEN} chars)`,
-      );
+    const parent = await this.prisma.message.findUnique({
+      where: { id: replyToMessageId },
+      select: { id: true, channelId: true },
+    });
+
+    if (!parent || parent.channelId !== channelId) {
+      throw new ForbiddenException('Invalid reply parent');
     }
 
-    // 2) parent check (optional, for replies)
-    let parentId: string | undefined = undefined;
-    if (replyToMessageId) {
-      const parent = await this.prisma.message.findUnique({
-        where: { id: replyToMessageId },
-        select: { id: true, channelId: true },
-      });
-
-      if (!parent || parent.channelId !== channelId) {
-        throw new ForbiddenException('Invalid reply parent');
-      }
-
-      parentId = parent.id;
-    }
-
-    // 2b) clean mentions (remove duplicates, remove falsy)
-    const cleanMentions = Array.from(new Set(mentionUserIds)).filter(Boolean);
-
-    // 2c) get bot user ID
-    const botId = await this.getBotUserId();
-
-    // 2d) Check if bot is mentioned
-    const isBotMentioned = botId && cleanMentions.includes(botId);
-
-    // 3) create message (incl. parent, author, reactions, mentions, attachments)
-    const msg = await this.prisma.message.create({
-      data: {
-        channelId,
-        authorId,
-        content: cleanContent,
-        parentId,
-        mentions: {
-          create: cleanMentions.map((userId) => ({ userId })),
-        },
-        attachments: {
-          create: attachments.map((a) => ({
-            url: a.url,
-            fileName: a.fileName,
-            mimeType: a.mimeType,
-            size: a.size,
-          })),
-        },
-      },
-      include: {
-        author: {
-          select: {
-            id: true,
-            displayName: true,
-            avatarUrl: true,
-          },
-        },
-        parent: {
-          select: {
-            id: true,
-            content: true,
-            author: {
-              select: { id: true, displayName: true },
-            },
-          },
-        },
-        reactions: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                displayName: true,
-                avatarUrl: true,
-              },
-            },
-          },
-        },
-        mentions: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                displayName: true,
-                avatarUrl: true,
-              },
-            },
-          },
-        },
-        attachments: true,
-      },
-    });
-
-    const room = `chan:${channelId}`;
-    const sockets = await this.ws.server.in(room).fetchSockets();
-
-    // 4) realtime push (full payload incl. parent + reactions + mentions + attachments)
-    this.ws.server.to(`chan:${channelId}`).emit('message.created', {
-      id: msg.id,
-      channelId: msg.channelId,
-      authorId: msg.authorId,
-      content: msg.content ?? null,
-      createdAt: msg.createdAt.toISOString(),
-      author: {
-        id: msg.author.id,
-        displayName: msg.author.displayName,
-        avatarUrl: msg.author.avatarUrl ?? null,
-      },
-      parent: msg.parent
-        ? {
-            id: msg.parent.id,
-            content: msg.parent.content,
-            author: {
-              id: msg.parent.author.id,
-              displayName: msg.parent.author.displayName,
-            },
-          }
-        : null,
-      reactions: msg.reactions.map((r) => ({
-        id: r.id,
-        emoji: r.emoji,
-        user: {
-          id: r.user.id,
-          displayName: r.user.displayName,
-          avatarUrl: r.user.avatarUrl ?? null,
-        },
-      })),
-      mentions: msg.mentions.map((m) => ({
-        userId: m.userId,
-        user: {
-          id: m.user.id,
-          displayName: m.user.displayName,
-          avatarUrl: m.user.avatarUrl ?? null,
-        },
-      })),
-      attachments: msg.attachments.map((a) => ({
-        id: a.id,
-        url: a.url,
-        fileName: a.fileName,
-        mimeType: a.mimeType,
-        size: a.size,
-      })),
-    });
-
-    // 4b) unread push (to user-rooms, for everyone except the sender)
-    const ch = await this.prisma.channel.findUnique({
-      where: { id: msg.channelId },
-      select: { members: { select: { id: true } } },
-    });
-
-    for (const m of ch?.members ?? []) {
-      if (m.id === msg.authorId) continue;
-
-      const uroom = `user:${m.id}`;
-      const usockets = await this.ws.server.in(uroom).fetchSockets();
-
-      this.ws.server.to(uroom).emit('channel.unread', {
-        channelId: msg.channelId,
-        delta: 1,
-        messageId: msg.id,
-        at: msg.createdAt.toISOString(),
-      });
-    }
-
-    const text = (msg.content ?? '').trim();
-    const isCommand = text.startsWith('!');
-    const chMeta = await this.prisma.channel.findUnique({
-      where: { id: msg.channelId },
-      select: { name: true, isDirect: true },
-    });
-
-    const isGeneral = chMeta?.name === 'general' && chMeta?.isDirect === false;
-
-    const botMentionedInSavedMsg = msg.mentions?.some(
-      (m) => (m as any).userId === botId || m.user?.id === botId,
-    );
-
-    // 5) if bot mentioned, generate reply async
-    if (
-      isGeneral &&
-      (isCommand || botMentionedInSavedMsg) &&
-      msg.authorId !== botId
-    ) {
-      void (async () => {
-        // bot typing ON
-        this.ws.server.to(`view:${msg.channelId}`).emit('typing', {
-          channelId: msg.channelId,
-          userId: botId,
-          displayName: 'BambooBob',
-          isTyping: true,
-        });
-
-        try {
-          // ---- determine intent from user text ----
-          const cleanedUser = (msg.content ?? '')
-            .replaceAll(`@BambooBob`, '')
-            .trim()
-            .toLowerCase();
-
-          const wantsSummary =
-            cleanedUser.includes('samenvat') ||
-            cleanedUser.includes('samenvatting') ||
-            cleanedUser.includes('samenvatten') ||
-            cleanedUser.includes('summarize') ||
-            cleanedUser.includes('summary') ||
-            cleanedUser.includes('tldr');
-
-          const wantsSinceLastRead =
-            cleanedUser.includes('wat heb ik gemist') ||
-            cleanedUser.includes('wat mis ik') ||
-            cleanedUser.includes('since last read') ||
-            cleanedUser.includes('what did i miss') ||
-            cleanedUser.includes('missed') ||
-            cleanedUser.includes('did i miss') ||
-            cleanedUser.includes('miss something');
-
-          // ---- resolve lastRead ----
-          const read = await this.prisma.channelRead.findUnique({
-            where: {
-              userId_channelId: {
-                userId: msg.authorId,
-                channelId: msg.channelId,
-              },
-            },
-            select: { lastRead: true },
-          });
-
-          const overrideDate =
-            typeof lastReadOverride === 'string' && lastReadOverride
-              ? new Date(lastReadOverride)
-              : null;
-
-          const lastRead = overrideDate ?? read?.lastRead ?? null;
-          const cutoff = msg.createdAt;
-
-          // ---- build NOT clause ----
-          const notClause: any[] = [{ id: msg.id }];
-          if (wantsSinceLastRead) {
-            notClause.push({ authorId: msg.authorId }); // exclude requester
-            notClause.push({ authorId: botId }); // exclude bot's own messages
-          }
-
-          // ---- fetch context ----
-          const whereBase: any = {
-            channelId: msg.channelId,
-            deletedAt: null,
-            NOT: notClause,
-          };
-
-          const where = wantsSummary
-            ? {
-                ...whereBase,
-                // summary = "recent chat", so just cap at cutoff (no lastRead filter)
-                createdAt: { lte: cutoff },
-              }
-            : lastRead
-              ? {
-                  ...whereBase,
-                  // since-last-read = only unread window
-                  createdAt: { gt: lastRead, lte: cutoff },
-                }
-              : {
-                  ...whereBase,
-                  // no lastRead known -> fallback to recent chat too
-                  createdAt: { lte: cutoff },
-                };
-
-          // For summary we need the *latest* 50 (desc), then reverse for chronological prompt
-          const raw = await this.prisma.message.findMany({
-            where,
-            orderBy: { createdAt: wantsSummary ? 'desc' : 'asc' },
-            take: 50,
-            select: {
-              createdAt: true,
-              content: true,
-              author: { select: { displayName: true } },
-              parent: {
-                select: {
-                  author: { select: { displayName: true } },
-                },
-              },
-              mentions: {
-                select: {
-                  user: { select: { displayName: true } },
-                },
-              },
-            },
-          });
-
-          const context = wantsSummary ? raw.reverse() : raw;
-
-          // ---- build history ----
-          const history = context
-            .map((m) => formatHistoryLine(m as any))
-            .join('\n');
-
-          // ---- call AI bot ----
-          const botReply = await this.aiBot.onUserMessage({
-            channelId: msg.channelId,
-            authorId: msg.authorId,
-            content: msg.content ?? '',
-            isBotMentioned: isCommand ? false : botMentionedInSavedMsg,
-            history,
-            lastRead,
-            lastReadOverride: overrideDate,
-          });
-
-          if (!botReply?.reply?.trim()) {
-            return;
-          }
-
-          // ---- mark as read ONLY for "what did I miss" ----
-          if (wantsSinceLastRead) {
-            await this.prisma.channelRead.upsert({
-              where: {
-                userId_channelId: {
-                  userId: msg.authorId,
-                  channelId: msg.channelId,
-                },
-              },
-              update: { lastRead: cutoff },
-              create: {
-                userId: msg.authorId,
-                channelId: msg.channelId,
-                lastRead: cutoff,
-              },
-            });
-          }
-
-          // send bot reply as a real chat message
-          await this.createBotMessage(msg.channelId, botReply.reply, undefined);
-        } catch (err) {
-          console.warn('[bot] failed to generate reply', err);
-        } finally {
-          // bot typing OFF
-          this.ws.server.to(`view:${msg.channelId}`).emit('typing', {
-            channelId: msg.channelId,
-            userId: botId,
-            displayName: 'BambooBob',
-            isTyping: false,
-          });
-        }
-      })();
-    }
-
-    return msg;
-  }
-
-  // on-demand digest posting
-  async postDigestToChannel(
-    channelId: string,
-    opts?: { hours?: number },
-  ): Promise<{ ok: true; messageId: string }> {
-    const hours = opts?.hours ?? 24;
-
-    // Generate digest text using the bot (single source of truth)
-    const digestText = await this.aiBot.generateDigestForChannel(
-      channelId,
-      hours,
-    );
-
-    // Post as bot message
-    const msg = await this.createBotMessage(channelId, digestText);
-    if (!msg) {
-      throw new Error('Bot user not found (bot@ai.local). Did you run seed?');
-    }
-
-    return { ok: true, messageId: msg.id };
-  }
-
-  // check if there are messages (non-bot) in last N hours
-  async hasMessagesInLastHours(
-    channelId: string,
-    hours: number,
-  ): Promise<boolean> {
-    const since = new Date(Date.now() - hours * 60 * 60 * 1000);
-
-    const botId = await this.getBotUserId();
-
-    const count = await this.prisma.message.count({
-      where: {
-        channelId,
-        deletedAt: null,
-        authorId: botId ? { not: botId } : undefined,
-        createdAt: { gte: since },
-      },
-    });
-
-    return count > 0;
-  }
-
-  // helper to create bot message
-  private async createBotMessage(
-    channelId: string,
-    content: string,
-    markReadForUserId?: string,
-  ) {
-    const botId = await this.getBotUserId();
-    if (!botId) return null;
-
-    const msg = await this.prisma.message.create({
-      data: {
-        channelId,
-        authorId: botId,
-        content: content ?? '',
-      },
-      include: {
-        author: { select: { id: true, displayName: true, avatarUrl: true } },
-      },
-    });
-
-    // mark as read for the user who triggered the bot
-    if (markReadForUserId) {
-      await this.prisma.channelRead.upsert({
-        where: {
-          userId_channelId: {
-            userId: markReadForUserId,
-            channelId,
-          },
-        },
-        update: { lastRead: msg.createdAt },
-        create: {
-          userId: markReadForUserId,
-          channelId,
-          lastRead: msg.createdAt,
-        },
-      });
-    }
-
-    this.ws.server.to(`chan:${channelId}`).emit('message.created', {
-      id: msg.id,
-      channelId: msg.channelId,
-      authorId: msg.authorId,
-      content: msg.content ?? null,
-      createdAt: msg.createdAt.toISOString(),
-      author: {
-        id: msg.author.id,
-        displayName: msg.author.displayName,
-        avatarUrl: msg.author.avatarUrl ?? null,
-      },
-      parent: null,
-      reactions: [],
-      mentions: [],
-      attachments: [],
-    });
-
-    return msg;
+    return parent.id;
   }
 
   // helper to assert channel access
@@ -680,41 +117,306 @@ export class MessagesService {
     return { isOwner, isAdmin, channelId: msg.channelId };
   }
 
-  /** edit */
-  async update(messageId: string, userId: string, content: string) {
-    const { isOwner, isAdmin, channelId } = await this.canMutate(
-      messageId,
-      userId,
+  // helper to create bot message
+  private async createBotMessage(
+    channelId: string,
+    content: string,
+    markReadForUserId?: string,
+  ) {
+    const botId = await this.getBotUserId();
+    if (!botId) return null;
+
+    const msg = await this.prisma.message.create({
+      data: { channelId, authorId: botId, content: content ?? '' },
+      include: {
+        author: { select: { id: true, displayName: true, avatarUrl: true } },
+      },
+    });
+
+    if (markReadForUserId) {
+      await this.prisma.channelRead.upsert({
+        where: {
+          userId_channelId: { userId: markReadForUserId, channelId },
+        },
+        update: { lastRead: msg.createdAt },
+        create: {
+          userId: markReadForUserId,
+          channelId,
+          lastRead: msg.createdAt,
+        },
+      });
+    }
+
+    this.rt.emitMessageCreated({
+      id: msg.id,
+      channelId: msg.channelId,
+      authorId: msg.authorId,
+      content: msg.content ?? null,
+      createdAt: msg.createdAt.toISOString(),
+      author: {
+        id: msg.author.id,
+        displayName: msg.author.displayName,
+        avatarUrl: msg.author.avatarUrl ?? null,
+      },
+      parent: null,
+      reactions: [],
+      mentions: [],
+      attachments: [],
+    });
+
+    return msg;
+  }
+
+  // ---------------------------
+  // Read
+  // ---------------------------
+
+  async list(channelId: string, userId: string, take = 50, cursor?: string) {
+    await this.assertCanAccessChannel(channelId, userId);
+
+    return this.prisma.message.findMany({
+      where: { channelId },
+      orderBy: { createdAt: 'desc' },
+      ...this.page(take, cursor),
+      include: MESSAGE_INCLUDE_FULL,
+    });
+  }
+
+  async search(
+    channelId: string,
+    userId: string,
+    query: string,
+    take = 50,
+    cursor?: string,
+  ) {
+    await this.assertCanAccessChannel(channelId, userId);
+
+    return this.prisma.message.findMany({
+      where: {
+        channelId,
+        deletedAt: null,
+        content: { not: null, contains: query, mode: 'insensitive' },
+      },
+      orderBy: { createdAt: 'desc' },
+      ...this.page(take, cursor),
+      include: MESSAGE_INCLUDE_FULL,
+    });
+  }
+
+  // ---------------------------
+  // Create
+  // ---------------------------
+
+  async create(
+    channelId: string,
+    authorId: string,
+    content?: string,
+    replyToMessageId?: string,
+    mentionUserIds: string[] = [],
+    attachments: {
+      url: string;
+      fileName: string;
+      mimeType: string;
+      size: number;
+    }[] = [],
+    lastReadOverride?: string | null,
+  ) {
+    await this.assertCanAccessChannel(channelId, authorId);
+
+    const cleanContent = this.guardMessageLen(content);
+    const parentId = await this.resolveParentId(channelId, replyToMessageId);
+    const cleanMentions = this.cleanIds(mentionUserIds);
+
+    const botId = await this.getBotUserId();
+    const isBotMentioned = !!(botId && cleanMentions.includes(botId));
+
+    const msg = await this.prisma.message.create({
+      data: {
+        channelId,
+        authorId,
+        content: cleanContent,
+        parentId,
+        mentions: { create: cleanMentions.map((userId) => ({ userId })) },
+        attachments: {
+          create: attachments.map((a) => ({
+            url: a.url,
+            fileName: a.fileName,
+            mimeType: a.mimeType,
+            size: a.size,
+          })),
+        },
+      },
+      include: MESSAGE_INCLUDE_FULL,
+    });
+
+    // realtime push (full payload)
+    this.rt.emitMessageCreated({
+      id: msg.id,
+      channelId: msg.channelId,
+      authorId: msg.authorId,
+      content: msg.content ?? null,
+      createdAt: msg.createdAt.toISOString(),
+      author: {
+        id: msg.author.id,
+        displayName: msg.author.displayName,
+        avatarUrl: msg.author.avatarUrl ?? null,
+      },
+      parent: msg.parent
+        ? {
+            id: msg.parent.id,
+            content: msg.parent.content,
+            author: {
+              id: msg.parent.author.id,
+              displayName: msg.parent.author.displayName,
+            },
+          }
+        : null,
+      reactions: msg.reactions.map((r: any) => ({
+        id: r.id,
+        emoji: r.emoji,
+        user: {
+          id: r.user.id,
+          displayName: r.user.displayName,
+          avatarUrl: r.user.avatarUrl ?? null,
+        },
+      })),
+      mentions: (msg.mentions ?? []).map((m: any) => ({
+        userId: m.userId,
+        user: {
+          id: m.user.id,
+          displayName: m.user.displayName,
+          avatarUrl: m.user.avatarUrl ?? null,
+        },
+      })),
+      attachments: (msg.attachments ?? []).map((a: any) => ({
+        id: a.id,
+        url: a.url,
+        fileName: a.fileName,
+        mimeType: a.mimeType,
+        size: a.size,
+      })),
+    });
+
+    // unread delta for everyone except sender
+    const ch = await this.prisma.channel.findUnique({
+      where: { id: msg.channelId },
+      select: { members: { select: { id: true } } },
+    });
+
+    for (const m of ch?.members ?? []) {
+      if (m.id === msg.authorId) continue;
+
+      this.rt.emitUnreadDelta({
+        userId: m.id,
+        channelId: msg.channelId,
+        delta: 1,
+        messageId: msg.id,
+        at: msg.createdAt.toISOString(),
+      });
+    }
+
+    const text = (msg.content ?? '').trim();
+    const isCommand = text.startsWith('!');
+
+    const chMeta = await this.prisma.channel.findUnique({
+      where: { id: msg.channelId },
+      select: { name: true, isDirect: true },
+    });
+
+    const isGeneral = chMeta?.name === 'general' && chMeta?.isDirect === false;
+
+    const botMentionedInSavedMsg = !!(
+      botId &&
+      (msg.mentions ?? []).some(
+        (m: any) => m.userId === botId || m.user?.id === botId,
+      )
     );
+
+    // bot reply (async)
+    if (botId) {
+      void this.bot.maybeRespond({
+        msg: {
+          id: msg.id,
+          channelId: msg.channelId,
+          authorId: msg.authorId,
+          content: msg.content ?? null,
+          createdAt: msg.createdAt,
+          mentions: msg.mentions as any,
+        },
+        botId,
+        isGeneral,
+        isCommand,
+        botMentioned: botMentionedInSavedMsg || isBotMentioned,
+        lastReadOverride,
+        createBotMessage: async (chId, c) =>
+          this.createBotMessage(chId, c, undefined),
+      });
+    }
+
+    return msg;
+  }
+
+  // ---------------------------
+  // Digest
+  // ---------------------------
+
+  async postDigestToChannel(
+    channelId: string,
+    opts?: { hours?: number },
+  ): Promise<{ ok: true; messageId: string }> {
+    const hours = opts?.hours ?? 24;
+
+    const digestText = await this.bot.generateDigestForChannel(
+      channelId,
+      hours,
+    );
+
+    const msg = await this.createBotMessage(channelId, digestText);
+    if (!msg) {
+      throw new Error('Bot user not found (bot@ai.local). Did you run seed?');
+    }
+
+    return { ok: true, messageId: msg.id };
+  }
+
+  async hasMessagesInLastHours(
+    channelId: string,
+    hours: number,
+  ): Promise<boolean> {
+    const since = new Date(Date.now() - hours * 60 * 60 * 1000);
+    const botId = await this.getBotUserId();
+
+    const count = await this.prisma.message.count({
+      where: {
+        channelId,
+        deletedAt: null,
+        authorId: botId ? { not: botId } : undefined,
+        createdAt: { gte: since },
+      },
+    });
+
+    return count > 0;
+  }
+
+  // ---------------------------
+  // Mutations
+  // ---------------------------
+
+  async update(messageId: string, userId: string, content: string) {
+    const { isOwner, isAdmin } = await this.canMutate(messageId, userId);
     if (!isOwner && !isAdmin) throw new ForbiddenException('Not allowed');
 
-    const cleanContent = (content ?? '').trim();
-    if (cleanContent.length > MAX_MESSAGE_LEN) {
-      throw new ForbiddenException(
-        `Message too long (max ${MAX_MESSAGE_LEN} chars)`,
-      );
-    }
+    const cleanContent = this.guardMessageLen(content);
+
     const updated = await this.prisma.message.update({
       where: { id: messageId },
       data: { content: cleanContent },
       select: { id: true, channelId: true, content: true, updatedAt: true },
     });
 
-    // realtime update
-    this.ws.server
-      .to(`chan:${updated.channelId}`)
-      .to(`view:${updated.channelId}`)
-      .emit('message.updated', {
-        id: updated.id,
-        channelId: updated.channelId,
-        content: updated.content,
-        updatedAt: updated.updatedAt.toISOString(),
-      });
-
-    // realtime: minimal payload is enough
-    this.ws.server.to(`chan:${channelId}`).emit('message.updated', {
+    this.rt.emitMessageUpdated({
       id: updated.id,
-      channelId,
+      channelId: updated.channelId,
       content: updated.content ?? null,
       updatedAt: updated.updatedAt.toISOString(),
     });
@@ -722,7 +424,6 @@ export class MessagesService {
     return updated;
   }
 
-  /** soft-delete */
   async softDelete(messageId: string, userId: string) {
     const { isOwner, isAdmin, channelId } = await this.canMutate(
       messageId,
@@ -736,7 +437,7 @@ export class MessagesService {
       select: { id: true, channelId: true, deletedAt: true },
     });
 
-    this.ws.server.to(`chan:${channelId}`).emit('message.deleted', {
+    this.rt.emitMessageDeleted({
       id: deleted.id,
       channelId,
       deletedAt: deleted.deletedAt!.toISOString(),
@@ -746,12 +447,9 @@ export class MessagesService {
     return { ok: true };
   }
 
-  // add reaction
   async addReaction(messageId: string, userId: string, emoji: string) {
     const trimmed = (emoji ?? '').trim();
-    if (!trimmed) {
-      throw new ForbiddenException('Emoji is required');
-    }
+    if (!trimmed) throw new ForbiddenException('Emoji is required');
 
     const msg = await this.prisma.message.findUnique({
       where: { id: messageId },
@@ -761,25 +459,15 @@ export class MessagesService {
 
     await this.assertCanAccessChannel(msg.channelId, userId);
 
-    // Ensure the same user cannot add the same emoji reaction to the same message twice
     await this.prisma.messageReaction.upsert({
       where: {
-        messageId_userId_emoji: {
-          messageId,
-          userId,
-          emoji: trimmed,
-        },
+        messageId_userId_emoji: { messageId, userId, emoji: trimmed },
       },
-      create: {
-        messageId,
-        userId,
-        emoji: trimmed,
-      },
+      create: { messageId, userId, emoji: trimmed },
       update: {},
     });
 
-    // minimal realtime payload – frontend counts further itself
-    this.ws.server.to(`chan:${msg.channelId}`).emit('message.added', {
+    this.rt.emitReactionAdded({
       messageId,
       channelId: msg.channelId,
       emoji: trimmed,
@@ -789,12 +477,9 @@ export class MessagesService {
     return { ok: true };
   }
 
-  // remove reaction
   async removeReaction(messageId: string, userId: string, emoji: string) {
     const trimmed = (emoji ?? '').trim();
-    if (!trimmed) {
-      throw new ForbiddenException('Emoji is required');
-    }
+    if (!trimmed) throw new ForbiddenException('Emoji is required');
 
     const msg = await this.prisma.message.findUnique({
       where: { id: messageId },
@@ -804,22 +489,17 @@ export class MessagesService {
 
     await this.assertCanAccessChannel(msg.channelId, userId);
 
-    // best-effort delete: if not found, ignore
     try {
       await this.prisma.messageReaction.delete({
         where: {
-          messageId_userId_emoji: {
-            messageId,
-            userId,
-            emoji: trimmed,
-          },
+          messageId_userId_emoji: { messageId, userId, emoji: trimmed },
         },
       });
-    } catch (e) {
+    } catch {
       // ignore if not found
     }
 
-    this.ws.server.to(`chan:${msg.channelId}`).emit('message.removed', {
+    this.rt.emitReactionRemoved({
       messageId,
       channelId: msg.channelId,
       emoji: trimmed,

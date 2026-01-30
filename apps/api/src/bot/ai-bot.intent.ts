@@ -22,7 +22,6 @@ const SUMMARY_RE =
 const SINCE_LAST_READ_RE =
   /\b(what did i miss|since last read|wat heb ik gemist|wat mis ik|bijgepraat)\b/i;
 
-// you can decide command name later; MVP supports "!digest" or "mention + digest"
 const DIGEST_RE = /\b(digest|dagoverzicht|daily digest)\b/i;
 
 export function parseBotIntent(rawText: string, botName: string): BotIntent {

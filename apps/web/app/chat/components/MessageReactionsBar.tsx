@@ -39,7 +39,7 @@ export function MessageReactionsBar({
   const [loadingEmoji, setLoadingEmoji] = useState<string | null>(null);
 
   const [localReactions, setLocalReactions] = useState<Reaction[]>(
-    ((message.reactions as any) ?? []) as Reaction[]
+    ((message.reactions as any) ?? []) as Reaction[],
   );
 
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -65,10 +65,14 @@ export function MessageReactionsBar({
   }, [localReactions, meId]);
 
   async function toggleReaction(emoji: string) {
-    if (!meId) return;
+    console.log("[toggleReaction]", { meId, emoji, messageId: message.id });
+    if (!meId) {
+      console.warn("[reactions] missing meId - cannot react");
+      return;
+    }
 
     const mine = (localReactions ?? []).some(
-      (r) => r.emoji === emoji && r.userId === meId
+      (r) => r.emoji === emoji && r.userId === meId,
     );
 
     const prev = localReactions;
