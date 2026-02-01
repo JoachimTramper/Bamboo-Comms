@@ -1,6 +1,12 @@
 "use client";
 
-import { useRef, useState, type UIEvent, type ChangeEvent } from "react";
+import {
+  useRef,
+  useState,
+  useEffect,
+  type UIEvent,
+  type ChangeEvent,
+} from "react";
 import { useRouter } from "next/navigation";
 
 import {
@@ -72,6 +78,14 @@ export default function ChatPage() {
     onCreateChannel,
     openDM,
   } = useChannels(user);
+
+  // Persist active channel in localStorage
+  function setActiveAndPersist(id: string) {
+    setActive(id);
+    if (user?.sub) {
+      localStorage.setItem(`lastChannel:${user.sub}`, id);
+    }
+  }
 
   // --- local UI state ---
   const [text, setText] = useState("");
@@ -150,6 +164,21 @@ export default function ChatPage() {
       }
     },
   });
+
+  const restoredOnceRef = useRef(false);
+
+  useEffect(() => {
+    if (!user?.sub) return;
+    if (restoredOnceRef.current) return;
+    if (!channels.length) return;
+
+    const saved = localStorage.getItem(`lastChannel:${user.sub}`);
+    if (saved && channels.some((c) => c.id === saved)) {
+      setActive(saved);
+    }
+
+    restoredOnceRef.current = true;
+  }, [user?.sub, channels, setActive]);
 
   // ---- handlers ----
   async function handleSend(files: File[] = []) {
@@ -346,7 +375,7 @@ export default function ChatPage() {
             dmChannels={dmChannels}
             active={active}
             setActive={(id) => {
-              setActive(id);
+              setActiveAndPersist(id);
               setSidebarOpen(false);
             }}
             newChannel={newChannel}
