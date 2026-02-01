@@ -1,32 +1,23 @@
 "use client";
 
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type UIEvent,
-  type ChangeEvent,
-} from "react";
+import { useRef, useState, type UIEvent, type ChangeEvent } from "react";
 import { useRouter } from "next/navigation";
+
 import {
-  me,
   logout,
-  createChannel,
-  listDirectChannels,
-  listChannelsWithUnread,
-  getOrCreateDirectChannel,
   updateAvatar,
   uploadAvatarFile,
   uploadMessageFile,
   updateDisplayName,
 } from "@/lib/api";
+
 import {
   ensureNotificationPermission,
   showBrowserNotification,
 } from "@/lib/notifications";
 
-import type { ChannelWithUnread, Message, Me } from "./types";
+import type { Message, Me } from "./types";
+
 import { MessageList } from "./components/MessageList";
 import { Composer } from "./components/Composer";
 import { Sidebar } from "./components/Sidebar";
@@ -43,12 +34,15 @@ import { useMobileSidebar } from "./hooks/useMobileSidebar";
 import { useDmPeer } from "./hooks/useDmPeer";
 import { useMentionCandidates } from "./hooks/useMentionCandidates";
 
+// refactor hooks
+import { useAuthGuard } from "./hooks/useAuthGuard";
+import { useChannels } from "./hooks/useChannels";
+import { useDisplayNameResolver } from "./hooks/useDisplayNameResolver";
+
 import {
   extractMentionUserIds,
   formatDateTime,
   formatLastOnline,
-  mergeChannelsById,
-  type MentionCandidate,
 } from "./utils/utils";
 
 type ReplyTarget = {
@@ -59,12 +53,28 @@ type ReplyTarget = {
 
 export default function ChatPage() {
   const router = useRouter();
-  const [user, setUser] = useState<Me | null>(null);
-  const [channels, setChannels] = useState<ChannelWithUnread[]>([]);
-  const [active, setActive] = useState<string | null>(null);
+
+  // --- auth ---
+  const { user, setUser } = useAuthGuard();
+
+  // --- channels (init + dms + active) ---
+  const {
+    channels,
+    setChannels,
+    active,
+    setActive,
+    activeChannel,
+    regularChannels,
+    dmChannels,
+    newChannel,
+    setNewChannel,
+    creating,
+    onCreateChannel,
+    openDM,
+  } = useChannels(user);
+
+  // --- local UI state ---
   const [text, setText] = useState("");
-  const [newChannel, setNewChannel] = useState("");
-  const [creating, setCreating] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState<string>("");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -78,32 +88,36 @@ export default function ChatPage() {
 
   useMobileSidebar(sidebarOpen, setSidebarOpen);
 
-  // auth guard
-  useEffect(() => {
-    me()
-      .then((u) => setUser(u as Me))
-      .catch(() => {
-        setUser(null);
-        router.replace("/login");
-      });
-  }, [router]);
+  // --- presence / typing / unread ---
+  const { othersOnline, recently } = usePresence(user?.sub);
+  const { label: typingLabel, emitTyping } = useTyping(active, user?.sub);
 
-  // initial channels + active (read-only)
-  useEffect(() => {
-    (async () => {
-      try {
-        const items = await listChannelsWithUnread();
-        setChannels(mergeChannelsById([], items ?? []));
-        setActive(items?.[0]?.id ?? null);
-      } catch (e) {
-        console.error("Failed to load channels with unread:", e);
-      }
-    })();
-  }, []);
+  useUnread({ active, myId: user?.sub, setChannels });
 
-  const activeChannel = channels.find((c) => c.id === active);
+  // --- DM peer + mention candidates ---
+  const dmPeer = useDmPeer({
+    activeChannel,
+    myId: user?.sub,
+    othersOnline,
+    recently,
+  });
 
-  // hooks
+  const mentionCandidates = useMentionCandidates({
+    activeChannel,
+    user,
+    othersOnline,
+    recently,
+  });
+
+  // --- displayName resolver for deletes (no msgs dependency) ---
+  const { resolveDisplayName } = useDisplayNameResolver({
+    user,
+    othersOnline,
+    recently,
+    channels,
+  });
+
+  // --- messages ---
   const {
     msgs,
     listRef,
@@ -125,7 +139,6 @@ export default function ChatPage() {
       if (msg.authorId === user.sub) return;
 
       const isDifferentChannel = msg.channelId !== active;
-
       const isMentioned = msg.mentions?.some((m) => m.userId === user.sub);
 
       if (isMentioned && isDifferentChannel) {
@@ -138,96 +151,7 @@ export default function ChatPage() {
     },
   });
 
-  const { label: typingLabel, emitTyping } = useTyping(active, user?.sub);
-  const { othersOnline, recently } = usePresence(user?.sub);
-  useUnread({ active, myId: user?.sub, setChannels });
-
-  // --- displayName resolver (for "Message deleted by …") ---
-  const idToNameRef = useRef<Map<string, string>>(new Map());
-  useEffect(() => {
-    const map = new Map<string, string>();
-
-    // 1) self
-    if (user) map.set(user.sub, user.displayName);
-
-    // 2) presence
-    othersOnline.forEach((u) => map.set(u.id, u.displayName));
-    recently.forEach((u) => map.set(u.id, u.displayName));
-
-    // 3) names from messages (authors / previous deletes)
-    msgs.forEach((m) => {
-      map.set(m.author.id, m.author.displayName);
-      if (m.deletedBy) map.set(m.deletedBy.id, m.deletedBy.displayName);
-    });
-
-    // 4) DM members (if present on channels)
-    channels.forEach((c) =>
-      c.members?.forEach((m) => map.set(m.id, m.displayName)),
-    );
-
-    idToNameRef.current = map;
-  }, [user, othersOnline, recently, msgs, channels]);
-
-  function resolveDisplayName(id: string) {
-    return idToNameRef.current.get(id);
-  }
-
-  // DMs list enrich (preserve members)
-  useEffect(() => {
-    if (!user) return;
-    (async () => {
-      try {
-        const dms = await listDirectChannels();
-        const normalized = dms.map((dm) => {
-          const other = dm.members?.find((m) => m.id !== user.sub);
-          return {
-            id: dm.id,
-            name: other?.displayName || dm.name || "Direct",
-            isDirect: true,
-            members: dm.members ?? [],
-          } as ChannelWithUnread;
-        });
-
-        setChannels((prev) => mergeChannelsById(prev, normalized));
-      } catch (e) {
-        console.error("Failed to load DMs:", e);
-      }
-    })();
-  }, [user]);
-
-  // keep bottom in view when viewport changes (e.g. mobile keyboard opens)
-  useEffect(() => {
-    const handleResize = () => {
-      const el = listRef.current;
-      if (!el) return;
-
-      // scroll to bottom when the viewport changes
-      el.scrollTop = el.scrollHeight;
-    };
-
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, [listRef]);
-
-  // helpers
-  const canSend = useMemo(
-    () => Boolean(user?.sub && active && text.trim()),
-    [user, active, text],
-  );
-
-  async function onCreateChannel() {
-    if (!newChannel.trim()) return;
-    try {
-      setCreating(true);
-      const c = await createChannel(newChannel.trim());
-      setChannels((prev) => [...prev, c]);
-      setActive(c.id);
-      setNewChannel("");
-    } finally {
-      setCreating(false);
-    }
-  }
-
+  // ---- handlers ----
   async function handleSend(files: File[] = []) {
     if (!active) return;
 
@@ -241,7 +165,7 @@ export default function ChatPage() {
     try {
       const mentions = extractMentionUserIds(text, mentionCandidates);
 
-      // 1) Upload alle files
+      // 1) Upload all files
       let attachments: Array<{
         url: string;
         fileName: string;
@@ -253,7 +177,6 @@ export default function ChatPage() {
         const uploaded = await Promise.all(
           files.map((f) => uploadMessageFile(f)),
         );
-
         attachments = uploaded.map((a) => ({
           url: a.url,
           fileName: a.fileName,
@@ -262,7 +185,7 @@ export default function ChatPage() {
         }));
       }
 
-      // 2) Message send via hook, NOT direct sendMessage
+      // 2) Send via hook
       await send(
         trimmed || undefined,
         replyTo?.id ?? undefined,
@@ -288,7 +211,7 @@ export default function ChatPage() {
     setEditText("");
   }
 
-  async function saveEdit(channelId: string, messageId: string) {
+  async function saveEdit(messageId: string) {
     const t = editText.trim();
     if (!t) return;
     try {
@@ -300,7 +223,7 @@ export default function ChatPage() {
     }
   }
 
-  async function removeMessage(channelId: string, messageId: string) {
+  async function removeMessage(messageId: string) {
     if (!user) return;
     try {
       await remove(messageId, { id: user.sub, displayName: user.displayName });
@@ -325,7 +248,6 @@ export default function ChatPage() {
   function handleLogout() {
     logout();
     setUser(null);
-    setActive(null);
     router.push("/login");
   }
 
@@ -333,30 +255,6 @@ export default function ChatPage() {
     const el = e.currentTarget;
     if (el.scrollTop <= 32 && !loadingOlder && hasMore) {
       loadOlder();
-    }
-  }
-
-  async function openDM(otherUserId: string) {
-    try {
-      const dm = await getOrCreateDirectChannel(otherUserId);
-      const other = dm.members?.find((m: any) => m.id !== user?.sub);
-      const label = other?.displayName || dm.name || "Direct";
-      setChannels((prev) =>
-        prev.some((c) => c.id === dm.id)
-          ? prev
-          : [
-              ...prev,
-              {
-                id: dm.id,
-                name: label,
-                isDirect: true,
-                members: dm.members ?? [],
-              } as ChannelWithUnread,
-            ],
-      );
-      setActive(dm.id);
-    } catch (e) {
-      console.error("Failed to open DM:", e);
     }
   }
 
@@ -398,23 +296,6 @@ export default function ChatPage() {
     }
   }
 
-  const regularChannels = channels.filter((c) => !c.isDirect);
-  const dmChannels = channels.filter((c) => c.isDirect);
-
-  const dmPeer = useDmPeer({
-    activeChannel,
-    myId: user?.sub,
-    othersOnline,
-    recently,
-  });
-
-  const mentionCandidates = useMentionCandidates({
-    activeChannel,
-    user,
-    othersOnline,
-    recently,
-  });
-
   if (!user) {
     return (
       <div className="min-h-dvh grid place-items-center">
@@ -427,7 +308,6 @@ export default function ChatPage() {
 
   return (
     <div className="fixed inset-0 overflow-hidden flex flex-col">
-      {/* header + avatar button */}
       <ChatHeader
         user={user}
         activeChannel={activeChannel}
@@ -443,9 +323,8 @@ export default function ChatPage() {
         onOpenSearch={() => setSearchOpen(true)}
         onChangeUsername={handleChangeUsername}
       />
-      {/* main layout */}
+
       <div className="flex-1 min-h-0 flex relative md:bg-stone-100">
-        {/* Mobile backdrop */}
         {sidebarOpen && (
           <div
             className="fixed inset-0 bg-black/30 z-40 md:hidden"
@@ -453,7 +332,6 @@ export default function ChatPage() {
           />
         )}
 
-        {/* Sidebar */}
         <div
           className={`
             absolute inset-y-0 left-0 z-50 w-64 bg-stone-100
@@ -484,7 +362,6 @@ export default function ChatPage() {
           />
         </div>
 
-        {/* Main */}
         <main
           className="
             flex-1 flex flex-col min-h-0 min-w-0
@@ -501,13 +378,8 @@ export default function ChatPage() {
             md:shadow-[inset_0_1px_0_rgba(255,255,255,0.4)]
           "
         >
-          {/* Scroll area (messages) */}
           <div className="flex-1 min-h-0 relative z-20">
-            {/* Title bubble overlay:
-                - Mobile: always (channels + DMs)
-                - Desktop: only for DMs */}
             {(activeChannel?.isDirect ?? false) ? (
-              // DM: show on all sizes
               <div className="absolute top-0 left-0 right-0 z-40">
                 <ChatTitleBubble
                   activeChannel={activeChannel}
@@ -515,7 +387,6 @@ export default function ChatPage() {
                 />
               </div>
             ) : (
-              // Channel: only on mobile
               <div className="md:hidden absolute top-0 left-0 right-0 z-40">
                 <ChatTitleBubble
                   activeChannel={activeChannel}
@@ -524,7 +395,6 @@ export default function ChatPage() {
               </div>
             )}
 
-            {/* Messages scroll behind it */}
             <div className="h-full flex flex-col">
               <MessageList
                 msgs={msgs}
@@ -535,9 +405,9 @@ export default function ChatPage() {
                 editText={editText}
                 setEditText={setEditText}
                 onStartEdit={(m) => startEdit(m)}
-                onSaveEdit={(m) => active && saveEdit(active, m.id)}
+                onSaveEdit={(m) => active && saveEdit(m.id)}
                 onCancelEdit={cancelEdit}
-                onDelete={(m) => active && removeMessage(active, m.id)}
+                onDelete={(m) => active && removeMessage(m.id)}
                 onReply={(m) => handleReply(m)}
                 formatDateTime={formatDateTime}
                 onScroll={handleScroll}
@@ -550,7 +420,7 @@ export default function ChatPage() {
               />
             </div>
           </div>
-          {/* Composer controls overlay */}
+
           <div className="absolute bottom-0 left-0 right-0 z-30">
             <TypingIndicator label={typingLabel} />
             <Composer
@@ -564,7 +434,7 @@ export default function ChatPage() {
           </div>
         </main>
       </div>
-      {/* Search modal */}
+
       <SearchModal
         open={searchOpen}
         channelId={active}

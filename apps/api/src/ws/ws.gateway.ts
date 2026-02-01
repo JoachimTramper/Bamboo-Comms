@@ -10,7 +10,8 @@ import {
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { PrismaService } from '../prisma/prisma.service';
-import { JwtService } from '@nestjs/jwt';
+import { WsAuthService } from './ws.auth';
+import { WsWelcomeService } from './ws.welcome';
 import { PresenceService } from './presence.service';
 import { OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 
@@ -29,8 +30,9 @@ export class WsGateway
 
   constructor(
     private prisma: PrismaService,
-    private jwt: JwtService,
     private presence: PresenceService,
+    private auth: WsAuthService,
+    private welcome: WsWelcomeService,
   ) {}
 
   // presence state (sockets ↔ users)
@@ -40,9 +42,6 @@ export class WsGateway
   // idle check timer + last emitted status per user
   private idleTimer: NodeJS.Timeout | null = null;
   private lastEmittedStatus = new Map<string, PresenceStatus>();
-
-  // welcomed users per channel
-  private welcomed = new Set<string>(); // `${channelId}:${userId}`
 
   // ---- lifecycle: idle-check interval ----
   onModuleInit() {
@@ -173,64 +172,6 @@ export class WsGateway
     });
   }
 
-  private async getBotUserId() {
-    const bot = await this.prisma.user.findFirst({
-      where: { email: 'bot@ai.local' },
-      select: { id: true },
-    });
-    return bot?.id ?? null;
-  }
-
-  private async hasWelcomeMessage(
-    channelId: string,
-    userId: string,
-    botId: string,
-  ) {
-    const exists = await this.prisma.message.findFirst({
-      where: {
-        channelId,
-        authorId: botId,
-        content: { contains: `[welcome: ${userId}]` },
-        deletedAt: null,
-      },
-      select: { id: true },
-    });
-    return !!exists;
-  }
-
-  private async postWelcome(channelId: string, userId: string, botId: string) {
-    const user = await this.getUserSafe(userId);
-    if (!user) return;
-
-    const msg = await this.prisma.message.create({
-      data: {
-        channelId,
-        authorId: botId,
-        content: `👋 Welcome ${user.displayName}! Type \`!help\` for commands. [welcome: ${userId}]`,
-      },
-      select: {
-        id: true,
-        channelId: true,
-        content: true,
-        createdAt: true,
-        author: { select: { id: true, displayName: true, avatarUrl: true } },
-      },
-    });
-
-    // send realtime to everyone who has general open
-    this.server.to(`view:${channelId}`).emit('message.created', {
-      id: msg.id,
-      channelId: msg.channelId,
-      content: msg.content,
-      createdAt: msg.createdAt.toISOString(),
-      author: {
-        id: msg.author.id,
-        displayName: msg.author.displayName,
-        avatarUrl: msg.author.avatarUrl ?? null,
-      },
-    });
-  }
-
   private async broadcastPresenceUpdate(userId: string) {
     const user = await this.getUserSafe(userId);
     if (!user) return;
@@ -255,51 +196,42 @@ export class WsGateway
   // ---- socket connect / disconnect ----
 
   async handleConnection(client: Socket) {
-    try {
-      const raw =
-        (client.handshake.auth as any)?.token ||
-        (client.handshake.headers['authorization'] as string | undefined);
-
-      const token = raw?.startsWith('Bearer ') ? raw.slice(7) : raw || '';
-      if (!token) throw new Error('Missing token');
-
-      const payload = this.jwt.verify(token, {
-        secret: process.env.JWT_SECRET!,
-      }) as JwtPayload;
-
-      (client as any).user = payload;
-
-      const userId = payload.sub;
-
-      client.join(`user:${userId}`);
-
-      const memberChannels = await this.prisma.channel.findMany({
-        where: { members: { some: { id: userId } } },
-        select: { id: true },
-      });
-
-      client.join(memberChannels.map((c) => `chan:${c.id}`));
-
-      // track socket
-      this.socketToUser.set(client.id, { userId });
-
-      const set = this.userToSockets.get(userId) ?? new Set<string>();
-      const wasOffline = set.size === 0;
-      set.add(client.id);
-      this.userToSockets.set(userId, set);
-
-      // presence → online + activity
-      this.presence.markOnline(userId);
-
-      // snapshot to this client
-      await this.sendPresenceSnapshot(client);
-
-      // just came online? broadcast
-      if (wasOffline) {
-        await this.broadcastPresenceUpdate(userId);
-      }
-    } catch {
+    const payload = this.auth.getPayload(client);
+    if (!payload) {
       client.disconnect(true);
+      return;
+    }
+
+    (client as any).user = payload;
+
+    const userId = payload.sub;
+
+    client.join(`user:${userId}`);
+
+    const memberChannels = await this.prisma.channel.findMany({
+      where: { members: { some: { id: userId } } },
+      select: { id: true },
+    });
+
+    client.join(memberChannels.map((c) => `chan:${c.id}`));
+
+    // track socket
+    this.socketToUser.set(client.id, { userId });
+
+    const set = this.userToSockets.get(userId) ?? new Set<string>();
+    const wasOffline = set.size === 0;
+    set.add(client.id);
+    this.userToSockets.set(userId, set);
+
+    // presence → online + activity
+    this.presence.markOnline(userId);
+
+    // snapshot to this client
+    await this.sendPresenceSnapshot(client);
+
+    // just came online? broadcast
+    if (wasOffline) {
+      await this.broadcastPresenceUpdate(userId);
     }
   }
 
@@ -413,25 +345,12 @@ export class WsGateway
     }
 
     // welcome logic only in general
-    if (!isGeneral) return { ok: true };
-
-    // quick per-connection guard
-    const key = `${channelId}:${u.sub}`;
-    if (this.welcomed.has(key)) return { ok: true };
-    this.welcomed.add(key);
-
-    // DB-guard (persists well after server restart)
-    const botId = await this.getBotUserId();
-    if (!botId) return { ok: true }; // no bot → no welcome
-
-    const alreadyWelcomed = await this.hasWelcomeMessage(
+    await this.welcome.maybeWelcome({
+      server: this.server,
       channelId,
-      u.sub,
-      botId,
-    );
-    if (!alreadyWelcomed) {
-      await this.postWelcome(channelId, u.sub, botId);
-    }
+      userId: u.sub,
+      isGeneral,
+    });
 
     return { ok: true };
   }
