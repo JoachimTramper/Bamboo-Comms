@@ -10,7 +10,6 @@ export function MessageItem({
   m,
   meId,
   channelId,
-  isMe,
   isDirect,
   isEditing,
   onStartEdit,
@@ -24,11 +23,11 @@ export function MessageItem({
   showSeen,
   isLastOwn,
   onRetry,
+  onOpenMenu,
 }: {
   m: Message;
   meId: string;
   channelId: string;
-  isMe: boolean;
   isDirect: boolean;
   isEditing: boolean;
   onStartEdit: () => void;
@@ -42,6 +41,7 @@ export function MessageItem({
   showSeen?: boolean;
   isLastOwn?: boolean;
   onRetry?: () => void;
+  onOpenMenu?: () => void;
 }) {
   const isDeleted = !!m.deletedAt;
   const isEdited =
@@ -73,6 +73,10 @@ export function MessageItem({
 
     longPressTimer.current = setTimeout(() => {
       openMenu();
+
+      requestAnimationFrame(() => {
+        onOpenMenu?.();
+      });
     }, 400);
   };
 

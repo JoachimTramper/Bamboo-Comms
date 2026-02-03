@@ -118,6 +118,33 @@ export function MessageList({
     return () => window.clearTimeout(timeout);
   }, [highlightedId]);
 
+  const nearBottomRef = useRef(true);
+
+  function scrollToBottomIfNearBottom() {
+    const el = listRef.current;
+    if (!el) return;
+
+    if (!nearBottomRef.current) return;
+
+    requestAnimationFrame(() => {
+      el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    });
+  }
+
+  useEffect(() => {
+    const el = listRef.current;
+    if (!el) return;
+
+    const update = () => {
+      nearBottomRef.current =
+        el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    };
+
+    update();
+    el.addEventListener("scroll", update, { passive: true });
+    return () => el.removeEventListener("scroll", update);
+  }, [listRef]);
+
   return (
     <div
       ref={listRef}
@@ -195,7 +222,6 @@ export function MessageList({
                     m={m}
                     meId={meId}
                     channelId={channelId}
-                    isMe={m.authorId === meId}
                     isDirect={isDirect}
                     isEditing={editingId === m.id}
                     onStartEdit={() => onStartEdit(m)}
@@ -209,6 +235,7 @@ export function MessageList({
                     showSeen={showSeen}
                     isLastOwn={isLastOwn}
                     onRetry={() => onRetrySend?.(m.id)}
+                    onOpenMenu={scrollToBottomIfNearBottom}
                   />
                 </div>
               </div>
