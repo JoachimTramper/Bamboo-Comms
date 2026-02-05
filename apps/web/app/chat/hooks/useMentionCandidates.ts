@@ -19,6 +19,10 @@ export function useMentionCandidates({
   recently,
 }: Opts) {
   return useMemo<MentionCandidate[]>(() => {
+    const myId = user?.sub ?? null;
+    const isDirect = !!activeChannel?.isDirect;
+
+    // 1) Start with members if we have them, otherwise fallback to presence/self
     const base: MentionCandidate[] = (() => {
       if (activeChannel?.members?.length) {
         return activeChannel.members.map((m) => ({
@@ -36,22 +40,21 @@ export function useMentionCandidates({
       ];
     })();
 
-    const myId = user?.sub;
-    const isDirect = !!activeChannel?.isDirect;
-
-    // bot mentionable in channels only (not DMs), self never
+    // 2) Add bot in channels (not DMs) if available from /auth/me
     const bot = user?.bot ?? null;
 
-    const withBot: MentionCandidate[] = [
-      ...(isDirect || !bot
-        ? []
-        : [{ id: bot.id, displayName: bot.displayName }]),
-      ...base.filter((c) => c.id !== myId),
+    const all: MentionCandidate[] = [
+      ...base,
+      ...(!isDirect && bot
+        ? [{ id: bot.id, displayName: bot.displayName }]
+        : []),
     ];
 
-    // dedupe on id (so it doesn't appear twice if it's in members)
+    // 3) Filter out self + dedupe
     const seen = new Set<string>();
-    return withBot.filter((c) => {
+    return all.filter((c) => {
+      if (!c?.id) return false;
+      if (myId && c.id === myId) return false;
       if (seen.has(c.id)) return false;
       seen.add(c.id);
       return true;
