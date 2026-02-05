@@ -68,11 +68,7 @@ export default function LoginPage() {
             const { needsUsername } = await loginWithGoogle(resp.credential);
             await me();
 
-            if (needsUsername) {
-              router.push("/choose-username"); // change if your route differs
-            } else {
-              router.push("/chat");
-            }
+            router.push("/chat");
           } catch (e: any) {
             setErr(
               e?.response?.data?.message || e?.message || "Google login failed",

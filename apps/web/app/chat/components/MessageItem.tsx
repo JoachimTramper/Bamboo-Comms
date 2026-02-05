@@ -129,6 +129,16 @@ export function MessageItem({
       onPointerDown={handlePointerDown}
       onPointerUp={handlePointerUp}
       onPointerLeave={handlePointerLeave}
+      onMouseEnter={() => {
+        // desktop hover -> keeps reactionbar above composer
+        if (isDeleted) return;
+        onOpenMenu?.();
+      }}
+      // onFocusCapture to keep menu open when focusing message via keyboard navigation
+      onFocusCapture={() => {
+        if (isDeleted) return;
+        onOpenMenu?.();
+      }}
     >
       {isDirect ? (
         <div

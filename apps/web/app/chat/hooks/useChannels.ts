@@ -1,5 +1,6 @@
 // hooks/useChannels.ts
 "use client";
+
 import { useEffect, useMemo, useState } from "react";
 import {
   listChannelsWithUnread,
@@ -17,18 +18,33 @@ export function useChannels(user: Me | null) {
   const [newChannel, setNewChannel] = useState("");
   const [creating, setCreating] = useState(false);
 
-  // initial channels + active
+  // initial channels + active (restore saved first, else general, else first)
   useEffect(() => {
     (async () => {
       try {
         const items = await listChannelsWithUnread();
         setChannels(mergeChannelsById([], items ?? []));
-        setActive(items?.[0]?.id ?? null);
+
+        setActive((prev) => {
+          if (prev) return prev;
+
+          const saved = user?.sub
+            ? localStorage.getItem(`lastChannel:${user.sub}`)
+            : null;
+
+          const general = items?.find(
+            (c) => !c.isDirect && c.name === "general",
+          );
+          const fallback = general?.id ?? items?.[0]?.id ?? null;
+
+          if (saved && items?.some((c) => c.id === saved)) return saved;
+          return fallback;
+        });
       } catch (e) {
         console.error("Failed to load channels with unread:", e);
       }
     })();
-  }, []);
+  }, [user?.sub]);
 
   // DMs enrich (preserve members)
   useEffect(() => {
@@ -75,6 +91,9 @@ export function useChannels(user: Me | null) {
       const c = await createChannel(newChannel.trim());
       setChannels((prev) => [...prev, c]);
       setActive(c.id);
+
+      if (user?.sub) localStorage.setItem(`lastChannel:${user.sub}`, c.id);
+
       setNewChannel("");
     } finally {
       setCreating(false);
@@ -103,6 +122,7 @@ export function useChannels(user: Me | null) {
       );
 
       setActive(dm.id);
+      localStorage.setItem(`lastChannel:${user.sub}`, dm.id);
     } catch (e) {
       console.error("Failed to open DM:", e);
     }
@@ -116,7 +136,6 @@ export function useChannels(user: Me | null) {
     activeChannel,
     regularChannels,
     dmChannels,
-
     newChannel,
     setNewChannel,
     creating,

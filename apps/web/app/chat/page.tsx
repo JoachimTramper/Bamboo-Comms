@@ -224,6 +224,12 @@ export default function ChatPage() {
 
       setText("");
       setReplyTo(null);
+
+      requestAnimationFrame(() => {
+        const el = listRef.current;
+        if (!el) return;
+        el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+      });
     } catch (e) {
       console.error("Failed to send message:", e);
     }

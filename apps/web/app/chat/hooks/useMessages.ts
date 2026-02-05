@@ -184,6 +184,13 @@ export function useMessages(
     if (!active || !userIdRef.current) return;
 
     const advanceSnapshot = isWhatDidIMiss(text);
+    const shouldScroll = nearBottomRef.current;
+
+    const scrollToBottom = () => {
+      const el = listRef.current;
+      if (!el) return;
+      el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    };
 
     try {
       const sent = await sendMessage(
@@ -196,10 +203,33 @@ export function useMessages(
       );
 
       if (advanceSnapshot) lastReadSnapshotRef.current = sent.createdAt;
+
+      setMsgs((prev) => {
+        if (prev.some((m) => m.id === sent.id)) return prev;
+        return [...prev, sent];
+      });
+
+      if (shouldScroll) {
+        // 1) direct after render
+        requestAnimationFrame(() => {
+          requestAnimationFrame(scrollToBottom);
+        });
+
+        // 2) extra nudge for attachment reflow/preview load
+        if (attachments.length > 0) {
+          window.setTimeout(() => {
+            if (!nearBottomRef.current) return; // user scrolled away
+            scrollToBottom();
+          }, 250);
+        }
+      }
     } catch (err) {
       console.error("Failed to send message:", err);
 
-      const failedId = `local-failed-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const failedId = `local-failed-${Date.now()}-${Math.random()
+        .toString(36)
+        .slice(2)}`;
+
       const displayName = resolveNameRef.current?.(userIdRef.current) ?? "You";
 
       const failedMessage: Message = {
@@ -227,6 +257,19 @@ export function useMessages(
       };
 
       setMsgs((prev) => [...prev, failedMessage]);
+
+      if (shouldScroll) {
+        requestAnimationFrame(() => {
+          requestAnimationFrame(scrollToBottom);
+        });
+
+        if (attachments.length > 0) {
+          window.setTimeout(() => {
+            if (!nearBottomRef.current) return;
+            scrollToBottom();
+          }, 250);
+        }
+      }
     }
   };
 

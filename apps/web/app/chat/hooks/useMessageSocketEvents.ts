@@ -41,7 +41,10 @@ export function useMessageSocketEvents({
 
       // Only add to UI if this is the active channel
       if (channelId && channelId === active) {
-        setMsgs((prev) => [...prev, msg]);
+        setMsgs((prev) => {
+          if (prev.some((m) => m.id === msg.id)) return prev;
+          return [...prev, msg];
+        });
       }
 
       // ALWAYS notify incoming callback (notifications, unread counts, etc.)

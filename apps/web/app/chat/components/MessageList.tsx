@@ -61,6 +61,8 @@ export function MessageList({
   const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
 
+  const contentRef = useRef<HTMLDivElement | null>(null);
+
   const lastReadIndex = lastReadMessageIdByOthers
     ? safeMsgs.findIndex((m) => m.id === lastReadMessageIdByOthers)
     : -1;
@@ -145,6 +147,23 @@ export function MessageList({
     return () => el.removeEventListener("scroll", update);
   }, [listRef]);
 
+  useEffect(() => {
+    const scroller = listRef.current;
+    const content = contentRef.current;
+    if (!scroller || !content) return;
+
+    const ro = new ResizeObserver(() => {
+      if (!nearBottomRef.current) return;
+      // when attachments/images change height -> pin back to bottom
+      requestAnimationFrame(() => {
+        scroller.scrollTop = scroller.scrollHeight;
+      });
+    });
+
+    ro.observe(content);
+    return () => ro.disconnect();
+  }, [listRef]);
+
   return (
     <div
       ref={listRef}
@@ -152,6 +171,7 @@ export function MessageList({
       className={`flex-1 overflow-auto pt-16 ${isDirect ? "md:pt-14" : "md:pt-4"} pb-20 scrollbar-gutter-stable`}
     >
       <div
+        ref={contentRef}
         className={
           isDirect
             ? "w-full space-y-1 px-2 sm:px-6 lg:px-[10vw] xl:px-[15vw]"
