@@ -25,6 +25,10 @@ function hashToken(token: string) {
   return createHash('sha256').update(token).digest('hex');
 }
 
+function isCustomAvatar(url?: string | null) {
+  return !!url && url.startsWith('/uploads/');
+}
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -277,9 +281,12 @@ export class AuthService {
 
       if (existingByEmail) {
         // Link Google to existing account
+        const shouldUpdateAvatar =
+          !existingByEmail.avatarUrl ||
+          !isCustomAvatar(existingByEmail.avatarUrl);
+
         user = await this.users.linkGoogleSub(existingByEmail.id, googleSub, {
-          avatarUrl: picture,
-          // if you still use email verification: set verified
+          avatarUrl: shouldUpdateAvatar ? picture : existingByEmail.avatarUrl,
           emailVerifiedAt: emailVerified
             ? new Date()
             : existingByEmail.emailVerifiedAt,
@@ -299,9 +306,12 @@ export class AuthService {
       }
     } else {
       // Optional: update avatar/verified
+      const shouldUpdateAvatar =
+        !user.avatarUrl || !isCustomAvatar(user.avatarUrl);
+
       user =
         (await this.users.touchGoogleProfile?.(user.id, {
-          avatarUrl: picture,
+          avatarUrl: shouldUpdateAvatar ? picture : user.avatarUrl,
           emailVerifiedAt: emailVerified ? new Date() : user.emailVerifiedAt,
         })) ?? user;
     }

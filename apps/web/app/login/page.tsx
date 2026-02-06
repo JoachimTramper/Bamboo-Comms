@@ -6,6 +6,17 @@ import { useRouter } from "next/navigation";
 
 const DISPLAYNAME_MAX = 32;
 
+function normalizeApiError(e: any) {
+  const msg = e?.response?.data?.message;
+
+  // Nest/class-validator errors can be arrays or objects, so we try to extract a readable message
+  if (Array.isArray(msg)) return msg.join("\n");
+
+  if (typeof msg === "string" && msg.trim()) return msg;
+
+  return e?.message || "Error";
+}
+
 export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -70,9 +81,7 @@ export default function LoginPage() {
 
             router.push("/chat");
           } catch (e: any) {
-            setErr(
-              e?.response?.data?.message || e?.message || "Google login failed",
-            );
+            setErr(normalizeApiError(e) || "Google login failed");
           }
         },
       });
@@ -111,7 +120,7 @@ export default function LoginPage() {
       await me();
       router.push("/chat");
     } catch (e: any) {
-      setErr(e?.response?.data?.message || e?.message || "Error");
+      setErr(normalizeApiError(e));
     }
   }
 
@@ -183,7 +192,11 @@ export default function LoginPage() {
             <p className="text-green-600 text-sm text-center">{success}</p>
           )}
 
-          {err && <p className="text-red-600 text-sm text-center">{err}</p>}
+          {err && (
+            <p className="text-red-600 text-sm text-center whitespace-pre-line">
+              {err}
+            </p>
+          )}
 
           <button
             type="submit"

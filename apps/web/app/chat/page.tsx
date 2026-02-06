@@ -299,7 +299,7 @@ export default function ChatPage() {
     try {
       setAvatarUploading(true);
       const updated = await uploadAvatarFile(file);
-      setUser(updated as Me);
+      setUser((prev) => (prev ? { ...prev, ...updated } : (updated as Me)));
     } catch (err) {
       console.error("Failed to upload avatar:", err);
     } finally {
@@ -311,7 +311,7 @@ export default function ChatPage() {
   async function handleRemoveAvatar() {
     try {
       const updated = await updateAvatar();
-      setUser(updated as Me);
+      setUser((prev) => (prev ? { ...prev, ...updated } : (updated as Me)));
     } catch (err) {
       console.error("Failed to remove avatar:", err);
     }
@@ -323,7 +323,7 @@ export default function ChatPage() {
 
     try {
       const updated = await updateDisplayName(dn);
-      setUser(updated as Me);
+      setUser((prev) => (prev ? { ...prev, ...updated } : (updated as Me)));
     } catch (e: any) {
       alert(
         e?.response?.data?.message || e?.message || "Failed to change username",
