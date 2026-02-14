@@ -206,11 +206,6 @@ export function MessageBody({
                 ].join(" ")}
               >
                 {m.content}
-                {isEdited && (
-                  <span className="ml-2 text-xs text-gray-400 italic">
-                    (edited)
-                  </span>
-                )}
               </div>
             )}
           </div>

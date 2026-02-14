@@ -34,7 +34,7 @@ export class ChannelsController {
     if (!isAdmin) {
       throw new ForbiddenException('Admins only');
     }
-    return this.svc.create(name);
+    return this.svc.create(name, user.sub, false);
   }
 
   // === Unread / Read ===

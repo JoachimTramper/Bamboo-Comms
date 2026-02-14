@@ -27,10 +27,36 @@ export class ChannelsService {
   }
 
   // Create a new channel (admin only, enforced in controller)
-  async create(name: string, isDirect = false) {
-    return this.prisma.channel.create({
-      data: { name, isDirect },
+  async create(name: string, creatorId: string, isDirect = false) {
+    const trimmed = (name ?? '').trim();
+    if (!trimmed) throw new NotFoundException('Missing channel name');
+
+    // fetch all users
+    const users = await this.prisma.user.findMany({
+      select: { id: true },
     });
+
+    const channel = await this.prisma.channel.create({
+      data: {
+        name: trimmed,
+        isDirect,
+        members: {
+          connect: users.map((u) => ({ id: u.id })),
+        },
+      },
+    });
+
+    // unread starts at 0 for everyone
+    await this.prisma.channelRead.createMany({
+      data: users.map((u) => ({
+        userId: u.id,
+        channelId: channel.id,
+        lastRead: new Date(),
+      })),
+      skipDuplicates: true,
+    });
+
+    return channel;
   }
 
   // Ensure the user is a member of the "general" channel.
@@ -134,30 +160,19 @@ export class ChannelsService {
 
     // initialize ChannelRead so unread starts at 0
     if (missing.length) {
-      const latest = await this.prisma.message.groupBy({
-        by: ['channelId'],
-        where: { channelId: { in: missing }, deletedAt: null },
-        _max: { createdAt: true },
-      });
-
-      const latestMap = new Map(
-        latest.map((x) => [x.channelId, x._max.createdAt ?? new Date()]),
-      );
+      const now = new Date();
 
       await this.prisma.channelRead.createMany({
         data: missing.map((channelId) => ({
           userId: meId,
           channelId,
-          lastRead: latestMap.get(channelId) ?? new Date(),
+          lastRead: now,
         })),
         skipDuplicates: true,
       });
 
       for (const channelId of missing) {
-        lastReadByChannel.set(
-          channelId,
-          latestMap.get(channelId) ?? new Date(),
-        );
+        lastReadByChannel.set(channelId, now);
       }
     }
 

@@ -15,6 +15,7 @@ import {
   uploadAvatarFile,
   uploadMessageFile,
   updateDisplayName,
+  markChannelRead,
 } from "@/lib/api";
 
 import {
@@ -179,6 +180,12 @@ export default function ChatPage() {
 
     restoredOnceRef.current = true;
   }, [user?.sub, channels, setActive]);
+
+  useEffect(() => {
+    if (!active) return;
+
+    markChannelRead(active).catch(() => {});
+  }, [active]);
 
   // ---- handlers ----
   async function handleSend(files: File[] = []) {
