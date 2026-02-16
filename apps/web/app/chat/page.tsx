@@ -183,9 +183,21 @@ export default function ChatPage() {
 
   useEffect(() => {
     if (!active) return;
+    if (!user?.sub) return;
 
-    markChannelRead(active).catch(() => {});
-  }, [active]);
+    markChannelRead(active)
+      .then((res) => {
+        // res.lastRead from backend
+        setChannels((prev) =>
+          prev.map((c) =>
+            c.id === active
+              ? { ...c, unread: 0, lastRead: res?.lastRead ?? c.lastRead }
+              : c,
+          ),
+        );
+      })
+      .catch(() => {});
+  }, [active, user?.sub, setChannels]);
 
   // ---- handlers ----
   async function handleSend(files: File[] = []) {
