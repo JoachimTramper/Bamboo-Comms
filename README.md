@@ -182,7 +182,9 @@ The bot is designed as a lightweight, non-intrusive assistant that enhances the 
 4. Run database migrations and seed data
 
    pnpm -F api db:migrate
+
    pnpm -F api exec prisma generate
+
    pnpm -F api db:seed
 
 5. Start the backend (NestJS, port 3000)
