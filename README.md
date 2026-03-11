@@ -160,6 +160,10 @@ The bot is designed as a lightweight, non-intrusive assistant that enhances the 
    GROQ_API_KEY="your-groq-api-key"
    GROQ_MODEL="llama-3.1-8b-instant"
    GROQ_BASE_URL="https://api.groq.com/openai/v1"
+
+   # Workspace invite
+
+   INVITE_CODE="ember-lion-47x9-qm2"
    ```
 
    ### Frontend (apps/web/.env.local)
@@ -175,19 +179,29 @@ The bot is designed as a lightweight, non-intrusive assistant that enhances the 
 
    The database will listen on port 5432.
 
-4. Start the backend (NestJS, port 3000)
+4. Run database migrations and seed data
+
+   pnpm -F api db:migrate
+   pnpm -F api exec prisma generate
+   pnpm -F api db:seed
+
+5. Start the backend (NestJS, port 3000)
 
    pnpm -F api start:dev
 
    API base URL: http://localhost:3000
 
-5. Start the frontend (Next.js, port 3001)
+6. Start the frontend (Next.js, port 3001)
 
    pnpm -F web dev -- --port 3001
 
    Frontend URL: http://localhost:3001
    Ensure the frontend env points at the API:
    NEXT_PUBLIC_API_BASE=http://localhost:3000
+
+7. Use the invite code when registering:
+
+   ember-lion-47x9-qm2
 
 ---
 
