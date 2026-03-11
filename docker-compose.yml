@@ -1,8 +1,9 @@
+version: "3.9"
+
 services:
-  postgres:
-    image: postgres:16
-    container_name: bamboo-comms-postgres
-    restart: unless-stopped
+  db:
+    image: postgres:15
+    restart: always
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
@@ -10,7 +11,7 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - pgdata:/var/lib/postgresql/data
 
 volumes:
-  postgres_data:
+  pgdata:
