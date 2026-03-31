@@ -13,6 +13,7 @@ import { MessagesModule } from './messages/messages.module';
 import { WsModule } from './ws/ws.module';
 import { UploadsModule } from './uploads/uploads.module';
 import { DigestModule } from './digest/digest.module';
+import { ConversationsModule } from './conversations/conversations.module';
 
 const repoRoot = process.env.INIT_CWD ?? process.cwd();
 
@@ -31,6 +32,7 @@ const repoRoot = process.env.INIT_CWD ?? process.cwd();
     UsersModule,
     ChannelsModule,
     MessagesModule,
+    ConversationsModule,
     WsModule,
     UploadsModule,
     DigestModule,

@@ -8,6 +8,7 @@
   "scripts": {
     "build": "nest build",
     "db:migrate": "prisma migrate deploy",
+    "db:plan:channels-to-conversations": "ts-node --transpile-only scripts/migrate-channels-to-conversations.ts",
     "db:seed": "prisma db seed",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",

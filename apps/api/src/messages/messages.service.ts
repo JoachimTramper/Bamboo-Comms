@@ -71,6 +71,47 @@ export class MessagesService {
     return parent.id;
   }
 
+  private async resolveConversationId(
+    conversationId?: string,
+    replyToMessageId?: string,
+  ): Promise<string | undefined> {
+    if (!conversationId && !replyToMessageId) return undefined;
+
+    let parentConversationId: string | null | undefined;
+
+    if (replyToMessageId) {
+      const parent = await this.prisma.message.findUnique({
+        where: { id: replyToMessageId },
+        select: { conversationId: true },
+      });
+
+      parentConversationId = parent?.conversationId ?? null;
+    }
+
+    if (!conversationId) {
+      return undefined;
+    }
+
+    const conversation = await this.prisma.conversation.findUnique({
+      where: { id: conversationId },
+      select: { id: true },
+    });
+
+    if (!conversation) {
+      throw new ForbiddenException('Invalid conversation');
+    }
+
+    if (
+      replyToMessageId &&
+      parentConversationId &&
+      parentConversationId !== conversationId
+    ) {
+      throw new ForbiddenException('Reply parent belongs to another conversation');
+    }
+
+    return conversation.id;
+  }
+
   // helper to assert channel access
   private async assertCanAccessChannel(channelId: string, userId: string) {
     const ch = await this.prisma.channel.findUnique({
@@ -122,12 +163,18 @@ export class MessagesService {
     channelId: string,
     content: string,
     markReadForUserId?: string,
+    conversationId?: string | null,
   ) {
     const botId = await this.getBotUserId();
     if (!botId) return null;
 
     const msg = await this.prisma.message.create({
-      data: { channelId, authorId: botId, content: content ?? '' },
+      data: {
+        channelId,
+        conversationId: conversationId ?? null,
+        authorId: botId,
+        content: content ?? '',
+      },
       include: {
         author: { select: { id: true, displayName: true, avatarUrl: true } },
       },
@@ -150,6 +197,7 @@ export class MessagesService {
     this.rt.emitMessageCreated({
       id: msg.id,
       channelId: msg.channelId,
+      conversationId: msg.conversationId ?? null,
       authorId: msg.authorId,
       content: msg.content ?? null,
       createdAt: msg.createdAt.toISOString(),
@@ -211,6 +259,7 @@ export class MessagesService {
     channelId: string,
     authorId: string,
     content?: string,
+    conversationId?: string,
     replyToMessageId?: string,
     mentionUserIds: string[] = [],
     attachments: {
@@ -225,6 +274,10 @@ export class MessagesService {
 
     const cleanContent = this.guardMessageLen(content);
     const parentId = await this.resolveParentId(channelId, replyToMessageId);
+    const resolvedConversationId = await this.resolveConversationId(
+      conversationId,
+      replyToMessageId,
+    );
     const cleanMentions = this.cleanIds(mentionUserIds);
 
     const botId = await this.getBotUserId();
@@ -233,6 +286,7 @@ export class MessagesService {
     const msg = await this.prisma.message.create({
       data: {
         channelId,
+        conversationId: resolvedConversationId,
         authorId,
         content: cleanContent,
         parentId,
@@ -253,6 +307,7 @@ export class MessagesService {
     this.rt.emitMessageCreated({
       id: msg.id,
       channelId: msg.channelId,
+      conversationId: msg.conversationId ?? null,
       authorId: msg.authorId,
       content: msg.content ?? null,
       createdAt: msg.createdAt.toISOString(),
@@ -338,6 +393,7 @@ export class MessagesService {
         msg: {
           id: msg.id,
           channelId: msg.channelId,
+          conversationId: msg.conversationId ?? null,
           authorId: msg.authorId,
           content: msg.content ?? null,
           createdAt: msg.createdAt,
@@ -348,8 +404,8 @@ export class MessagesService {
         isCommand,
         botMentioned: botMentionedInSavedMsg || isBotMentioned,
         lastReadOverride,
-        createBotMessage: async (chId, c) =>
-          this.createBotMessage(chId, c, undefined),
+        createBotMessage: async (chId, c, convId) =>
+          this.createBotMessage(chId, c, undefined, convId),
       });
     }
 

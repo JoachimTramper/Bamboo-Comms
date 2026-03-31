@@ -36,6 +36,7 @@ type AttachmentPayload = {
 export type MessageCreatedPayload = {
   id: string;
   channelId: string;
+  conversationId: string | null;
   authorId: string;
   content: string | null;
   createdAt: string;

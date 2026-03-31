@@ -66,6 +66,7 @@ export class MessagesController {
       channelId,
       user.sub,
       dto.content,
+      dto.conversationId,
       dto.replyToMessageId,
       dto.mentionUserIds ?? [],
       dto.attachments ?? [],

@@ -32,6 +32,10 @@ export class CreateMessageDto {
 
   @IsOptional()
   @IsString()
+  conversationId?: string;
+
+  @IsOptional()
+  @IsString()
   replyToMessageId?: string;
 
   @IsOptional()

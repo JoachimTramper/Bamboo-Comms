@@ -12,6 +12,20 @@ enum Role {
   ADMIN
 }
 
+enum ConversationStatus {
+  OPEN
+  PENDING
+  RESOLVED
+  CLOSED
+}
+
+enum ConversationPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
 model User {
   id              String        @id @default(cuid())
   email           String        @unique
@@ -32,8 +46,20 @@ model User {
   deletedMessages Message[]     @relation("MessageDeletedBy")
   reactions       MessageReaction[]
   mentions        MessageMention[]
+  assignedConversations Conversation[] @relation("ConversationAssignee")
 }
 
+model Customer {
+  id            String         @id @default(cuid())
+  email         String?        @unique
+  name          String?
+  company       String?
+  planTier      String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  conversations Conversation[]
+}
 
 model Channel {
   id            String                @id @default(cuid())
@@ -67,6 +93,7 @@ model Message {
   content     String?
   authorId    String
   channelId   String
+  conversationId String?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   deletedAt   DateTime?
@@ -74,6 +101,7 @@ model Message {
 
   author    User    @relation(fields: [authorId], references: [id])
   channel   Channel @relation(fields: [channelId], references: [id])
+  conversation Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
   deletedBy User?   @relation("MessageDeletedBy", fields: [deletedById], references: [id])
 
   reactions MessageReaction[]
@@ -88,6 +116,31 @@ model Message {
 
   @@index([channelId, createdAt(sort: Desc)])
   @@index([channelId, deletedAt])
+  @@index([conversationId, createdAt(sort: Desc)])
+}
+
+model Conversation {
+  id           String               @id @default(cuid())
+  subject      String?
+  status       ConversationStatus   @default(OPEN)
+  priority     ConversationPriority @default(NORMAL)
+  tags         String[]             @default([])
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
+  lastMessageAt DateTime?
+  resolvedAt   DateTime?
+
+  customerId   String?
+  assigneeId   String?
+
+  customer     Customer?            @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  assignee     User?                @relation("ConversationAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  messages     Message[]
+
+  @@index([status, createdAt(sort: Desc)])
+  @@index([assigneeId, status])
+  @@index([customerId])
+  @@index([priority, status])
 }
 
 model ChannelRead {
