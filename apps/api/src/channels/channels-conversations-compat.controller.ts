@@ -11,17 +11,17 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { ConversationsService } from './conversations.service';
-import { CreateConversationDto } from './dto/create-conversation.dto';
-import { UpdateConversationDto } from './dto/update-conversation.dto';
-import { UpdateConversationStatusDto } from './dto/update-conversation-status.dto';
-import { AssignConversationDto } from './dto/assign-conversation.dto';
-import { ListConversationsDto } from './dto/list-conversations.dto';
-import { TransitionConversationDto } from './dto/transition-conversation.dto';
+import { ConversationsService } from '../conversations/conversations.service';
+import { AssignConversationDto } from '../conversations/dto/assign-conversation.dto';
+import { CreateConversationDto } from '../conversations/dto/create-conversation.dto';
+import { ListConversationsDto } from '../conversations/dto/list-conversations.dto';
+import { TransitionConversationDto } from '../conversations/dto/transition-conversation.dto';
+import { UpdateConversationStatusDto } from '../conversations/dto/update-conversation-status.dto';
+import { UpdateConversationDto } from '../conversations/dto/update-conversation.dto';
 
-@Controller('conversations')
+@Controller('channels/conversations')
 @UseGuards(JwtAuthGuard)
-export class ConversationsController {
+export class ChannelsConversationsCompatController {
   constructor(private readonly conversations: ConversationsService) {}
 
   @Get()

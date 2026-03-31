@@ -1,6 +1,6 @@
 import { Type } from 'class-transformer';
 import { IsEnum, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
-import { ConversationStatus } from '@prisma/client';
+import { ConversationPriority, ConversationStatus } from '@prisma/client';
 
 export class ListConversationsDto {
   @IsOptional()
@@ -8,8 +8,24 @@ export class ListConversationsDto {
   status?: ConversationStatus;
 
   @IsOptional()
+  @IsEnum(ConversationPriority)
+  priority?: ConversationPriority;
+
+  @IsOptional()
   @IsString()
   assigneeId?: string;
+
+  @IsOptional()
+  @IsString()
+  customerId?: string;
+
+  @IsOptional()
+  @IsString()
+  tag?: string;
+
+  @IsOptional()
+  @IsString()
+  query?: string;
 
   @IsOptional()
   @Type(() => Number)

@@ -12,54 +12,107 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateConversationDto } from './dto/create-conversation.dto';
 import { UpdateConversationDto } from './dto/update-conversation.dto';
 import { ListConversationsDto } from './dto/list-conversations.dto';
+import { ConversationLifecycleAction } from './dto/transition-conversation.dto';
+
+const CONVERSATION_INCLUDE = {
+  customer: true,
+  assignee: {
+    select: {
+      id: true,
+      email: true,
+      displayName: true,
+      role: true,
+    },
+  },
+} satisfies Prisma.ConversationInclude;
 
 @Injectable()
 export class ConversationsService {
   constructor(private prisma: PrismaService) {}
 
-  async list(filters: ListConversationsDto) {
+  private assertCreateConversationInput(dto?: CreateConversationDto) {
+    if (!dto) {
+      throw new BadRequestException('Conversation payload is required');
+    }
+
+    const hasMeaningfulInput =
+      dto.subject !== undefined ||
+      dto.status !== undefined ||
+      dto.priority !== undefined ||
+      dto.customerId !== undefined ||
+      dto.assigneeId !== undefined ||
+      dto.tags !== undefined;
+
+    if (!hasMeaningfulInput) {
+      throw new BadRequestException(
+        'Conversation payload must include at least one field',
+      );
+    }
+  }
+
+  async listConversations(filters: ListConversationsDto) {
     const where: Prisma.ConversationWhereInput = {};
 
     if (filters.status) {
       where.status = filters.status;
     }
 
+    if (filters.priority) {
+      where.priority = filters.priority;
+    }
+
     if (filters.assigneeId) {
       where.assigneeId = filters.assigneeId;
+    }
+
+    if (filters.customerId) {
+      where.customerId = filters.customerId;
+    }
+
+    if (filters.tag) {
+      where.tags = { has: filters.tag.trim() };
+    }
+
+    const trimmedQuery = filters.query?.trim();
+    if (trimmedQuery) {
+      where.OR = [
+        { subject: { contains: trimmedQuery, mode: 'insensitive' } },
+        {
+          customer: {
+            is: {
+              email: { contains: trimmedQuery, mode: 'insensitive' },
+            },
+          },
+        },
+        {
+          customer: {
+            is: {
+              name: { contains: trimmedQuery, mode: 'insensitive' },
+            },
+          },
+        },
+        {
+          assignee: {
+            is: {
+              displayName: { contains: trimmedQuery, mode: 'insensitive' },
+            },
+          },
+        },
+      ];
     }
 
     return this.prisma.conversation.findMany({
       where,
       take: filters.take ?? 50,
       orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
-      include: {
-        customer: true,
-        assignee: {
-          select: {
-            id: true,
-            email: true,
-            displayName: true,
-            role: true,
-          },
-        },
-      },
+      include: CONVERSATION_INCLUDE,
     });
   }
 
-  async getById(id: string) {
+  async getConversationById(id: string) {
     const conversation = await this.prisma.conversation.findUnique({
       where: { id },
-      include: {
-        customer: true,
-        assignee: {
-          select: {
-            id: true,
-            email: true,
-            displayName: true,
-            role: true,
-          },
-        },
-      },
+      include: CONVERSATION_INCLUDE,
     });
 
     if (!conversation) {
@@ -69,7 +122,8 @@ export class ConversationsService {
     return conversation;
   }
 
-  async create(dto: CreateConversationDto) {
+  async createConversation(dto: CreateConversationDto) {
+    this.assertCreateConversationInput(dto);
     await this.ensureReferences(dto.customerId, dto.assigneeId);
 
     return this.prisma.conversation.create({
@@ -81,22 +135,12 @@ export class ConversationsService {
         assigneeId: dto.assigneeId ?? null,
         tags: this.normalizeTags(dto.tags),
       },
-      include: {
-        customer: true,
-        assignee: {
-          select: {
-            id: true,
-            email: true,
-            displayName: true,
-            role: true,
-          },
-        },
-      },
+      include: CONVERSATION_INCLUDE,
     });
   }
 
-  async update(id: string, dto: UpdateConversationDto) {
-    await this.getById(id);
+  async updateConversation(id: string, dto: UpdateConversationDto) {
+    await this.getConversationById(id);
     await this.ensureReferences(dto.customerId, dto.assigneeId);
 
     return this.prisma.conversation.update({
@@ -106,8 +150,10 @@ export class ConversationsService {
           dto.subject === undefined ? undefined : dto.subject.trim() || null,
         status: dto.status,
         priority: dto.priority,
-        customerId: dto.customerId === undefined ? undefined : dto.customerId || null,
-        assigneeId: dto.assigneeId === undefined ? undefined : dto.assigneeId || null,
+        customerId:
+          dto.customerId === undefined ? undefined : dto.customerId || null,
+        assigneeId:
+          dto.assigneeId === undefined ? undefined : dto.assigneeId || null,
         tags: dto.tags === undefined ? undefined : this.normalizeTags(dto.tags),
         resolvedAt:
           dto.status === undefined
@@ -116,22 +162,12 @@ export class ConversationsService {
               ? new Date()
               : null,
       },
-      include: {
-        customer: true,
-        assignee: {
-          select: {
-            id: true,
-            email: true,
-            displayName: true,
-            role: true,
-          },
-        },
-      },
+      include: CONVERSATION_INCLUDE,
     });
   }
 
-  async updateStatus(id: string, status: ConversationStatus) {
-    await this.getById(id);
+  async updateConversationStatus(id: string, status: ConversationStatus) {
+    await this.getConversationById(id);
 
     return this.prisma.conversation.update({
       where: { id },
@@ -139,44 +175,74 @@ export class ConversationsService {
         status,
         resolvedAt: status === ConversationStatus.RESOLVED ? new Date() : null,
       },
-      include: {
-        customer: true,
-        assignee: {
-          select: {
-            id: true,
-            email: true,
-            displayName: true,
-            role: true,
-          },
-        },
-      },
+      include: CONVERSATION_INCLUDE,
     });
   }
 
-  async assign(id: string, assigneeId?: string) {
-    await this.getById(id);
+  async assignConversation(id: string, assigneeId?: string) {
+    await this.getConversationById(id);
     await this.ensureReferences(undefined, assigneeId);
 
     return this.prisma.conversation.update({
       where: { id },
       data: { assigneeId: assigneeId || null },
-      include: {
-        customer: true,
-        assignee: {
-          select: {
-            id: true,
-            email: true,
-            displayName: true,
-            role: true,
-          },
-        },
-      },
+      include: CONVERSATION_INCLUDE,
     });
   }
 
-  async remove(id: string) {
-    await this.getById(id);
+  async transitionConversation(
+    id: string,
+    action: ConversationLifecycleAction,
+  ) {
+    switch (action) {
+      case ConversationLifecycleAction.OPEN:
+      case ConversationLifecycleAction.REOPEN:
+        return this.updateConversationStatus(id, ConversationStatus.OPEN);
+      case ConversationLifecycleAction.PENDING:
+        return this.updateConversationStatus(id, ConversationStatus.PENDING);
+      case ConversationLifecycleAction.RESOLVE:
+        return this.updateConversationStatus(id, ConversationStatus.RESOLVED);
+      case ConversationLifecycleAction.CLOSE:
+        return this.updateConversationStatus(id, ConversationStatus.CLOSED);
+      default:
+        throw new BadRequestException(
+          'Unsupported conversation lifecycle action',
+        );
+    }
+  }
+
+  async deleteConversation(id: string) {
+    await this.getConversationById(id);
     await this.prisma.conversation.delete({ where: { id } });
+  }
+
+  // Temporary wrappers for in-flight callers during the migration.
+  list(filters: ListConversationsDto) {
+    return this.listConversations(filters);
+  }
+
+  getById(id: string) {
+    return this.getConversationById(id);
+  }
+
+  create(dto: CreateConversationDto) {
+    return this.createConversation(dto);
+  }
+
+  update(id: string, dto: UpdateConversationDto) {
+    return this.updateConversation(id, dto);
+  }
+
+  updateStatus(id: string, status: ConversationStatus) {
+    return this.updateConversationStatus(id, status);
+  }
+
+  assign(id: string, assigneeId?: string) {
+    return this.assignConversation(id, assigneeId);
+  }
+
+  remove(id: string) {
+    return this.deleteConversation(id);
   }
 
   private normalizeTags(tags?: string[]) {
