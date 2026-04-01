@@ -4,10 +4,14 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { MessageContextType, type Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { MessagesRealtime } from './messages.realtime';
 import { MessagesBotOrchestrator } from './messages.bot';
 import { MESSAGE_INCLUDE_FULL } from './messages.queries';
+import { AiAssistantService } from '../ai-assistant/ai-assistant.service';
+import type { AuthPrincipal } from '../auth/auth.types';
+import { formatHistoryLine } from '../bot/ai-bot.format';
 
 const MAX_MESSAGE_LEN = 5000;
 
@@ -17,6 +21,7 @@ export class MessagesService {
     private prisma: PrismaService,
     private rt: MessagesRealtime,
     private bot: MessagesBotOrchestrator,
+    private assistant: AiAssistantService,
   ) {}
 
   // ---------------------------
@@ -112,6 +117,161 @@ export class MessagesService {
     return conversation.id;
   }
 
+  private inferMessageType(params: {
+    explicitType?: MessageContextType;
+    conversationId?: string;
+    authorId: string;
+    botId?: string | null;
+    subjectType: AuthPrincipal['subjectType'];
+  }) {
+    const { explicitType, conversationId, authorId, botId, subjectType } =
+      params;
+
+    if (!conversationId) {
+      if (explicitType && explicitType !== MessageContextType.CHAT) {
+        throw new ForbiddenException(
+          'Support message types require a conversation context',
+        );
+      }
+      return MessageContextType.CHAT;
+    }
+
+    const inferred =
+      explicitType ??
+      (botId && authorId === botId
+        ? MessageContextType.ASSISTANT
+        : subjectType === 'customer'
+          ? MessageContextType.CUSTOMER
+          : MessageContextType.AGENT);
+
+    if (inferred === MessageContextType.CHAT) {
+      throw new ForbiddenException(
+        'Chat message type is not valid for conversation messages',
+      );
+    }
+
+    if (
+      inferred === MessageContextType.CUSTOMER &&
+      subjectType !== 'customer' &&
+      !(botId && authorId === botId)
+    ) {
+      throw new ForbiddenException('Customer messages require a customer actor');
+    }
+
+    if (
+      inferred === MessageContextType.AGENT &&
+      subjectType !== 'user' &&
+      !(botId && authorId === botId)
+    ) {
+      throw new ForbiddenException('Agent replies require an agent actor');
+    }
+
+    if (inferred === MessageContextType.INTERNAL_NOTE && subjectType !== 'user') {
+      throw new ForbiddenException('Internal notes require an agent actor');
+    }
+
+    if (inferred === MessageContextType.ASSISTANT && authorId !== botId) {
+      throw new ForbiddenException('Assistant messages require the bot user');
+    }
+
+    return inferred;
+  }
+
+  private async getConversationResponseTimeMs(
+    conversationId: string,
+    messageType: MessageContextType,
+    createdAt: Date,
+  ) {
+    if (
+      messageType !== MessageContextType.AGENT &&
+      messageType !== MessageContextType.ASSISTANT
+    ) {
+      return null;
+    }
+
+    const conversation = await this.prisma.conversation.findUnique({
+      where: { id: conversationId },
+      select: { lastCustomerMessageAt: true },
+    });
+
+    if (!conversation?.lastCustomerMessageAt) return null;
+
+    const diff =
+      createdAt.getTime() - conversation.lastCustomerMessageAt.getTime();
+
+    return diff >= 0 ? diff : null;
+  }
+
+  private async updateConversationActivity(params: {
+    conversationId?: string | null;
+    messageType: MessageContextType;
+    createdAt: Date;
+  }) {
+    if (!params.conversationId) return;
+
+    const existing = await this.prisma.conversation.findUnique({
+      where: { id: params.conversationId },
+      select: {
+        id: true,
+        firstResponseAt: true,
+        lastCustomerMessageAt: true,
+      },
+    });
+
+    if (!existing) return;
+
+    const update: Prisma.ConversationUpdateInput = {
+      lastMessageAt: params.createdAt,
+    };
+
+    if (params.messageType === MessageContextType.CUSTOMER) {
+      update.lastCustomerMessageAt = params.createdAt;
+    }
+
+    if (
+      params.messageType === MessageContextType.AGENT ||
+      params.messageType === MessageContextType.ASSISTANT
+    ) {
+      update.lastSupportReplyAt = params.createdAt;
+      if (!existing.firstResponseAt && existing.lastCustomerMessageAt) {
+        update.firstResponseAt = params.createdAt;
+      }
+    }
+
+    await this.prisma.conversation.update({
+      where: { id: params.conversationId },
+      data: update,
+    });
+  }
+
+  private async buildConversationHistoryForAssistant(
+    conversationId: string,
+    excludeMessageId: string,
+  ) {
+    const context = await this.prisma.message.findMany({
+      where: {
+        conversationId,
+        deletedAt: null,
+        id: { not: excludeMessageId },
+        messageType: { not: MessageContextType.INTERNAL_NOTE },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+      select: {
+        createdAt: true,
+        content: true,
+        author: { select: { displayName: true } },
+        parent: { select: { author: { select: { displayName: true } } } },
+        mentions: { select: { user: { select: { displayName: true } } } },
+      },
+    });
+
+    return context
+      .reverse()
+      .map((message) => formatHistoryLine(message as any))
+      .join('\n');
+  }
+
   // helper to assert channel access
   private async assertCanAccessChannel(channelId: string, userId: string) {
     const ch = await this.prisma.channel.findUnique({
@@ -168,16 +328,35 @@ export class MessagesService {
     const botId = await this.getBotUserId();
     if (!botId) return null;
 
+    const messageType = conversationId
+      ? MessageContextType.ASSISTANT
+      : MessageContextType.CHAT;
+    const responseTimeMs = conversationId
+      ? await this.getConversationResponseTimeMs(
+          conversationId,
+          messageType,
+          new Date(),
+        )
+      : null;
+
     const msg = await this.prisma.message.create({
       data: {
         channelId,
         conversationId: conversationId ?? null,
+        messageType,
+        responseTimeMs,
         authorId: botId,
         content: content ?? '',
       },
       include: {
         author: { select: { id: true, displayName: true, avatarUrl: true } },
       },
+    });
+
+    await this.updateConversationActivity({
+      conversationId: msg.conversationId ?? null,
+      messageType,
+      createdAt: msg.createdAt,
     });
 
     if (markReadForUserId) {
@@ -198,6 +377,8 @@ export class MessagesService {
       id: msg.id,
       channelId: msg.channelId,
       conversationId: msg.conversationId ?? null,
+      messageType: msg.messageType,
+      responseTimeMs: msg.responseTimeMs ?? null,
       authorId: msg.authorId,
       content: msg.content ?? null,
       createdAt: msg.createdAt.toISOString(),
@@ -257,9 +438,10 @@ export class MessagesService {
 
   async create(
     channelId: string,
-    authorId: string,
+    actor: AuthPrincipal,
     content?: string,
     conversationId?: string,
+    messageType?: MessageContextType,
     replyToMessageId?: string,
     mentionUserIds: string[] = [],
     attachments: {
@@ -270,7 +452,7 @@ export class MessagesService {
     }[] = [],
     lastReadOverride?: string | null,
   ) {
-    await this.assertCanAccessChannel(channelId, authorId);
+    await this.assertCanAccessChannel(channelId, actor.sub);
 
     const cleanContent = this.guardMessageLen(content);
     const parentId = await this.resolveParentId(channelId, replyToMessageId);
@@ -282,12 +464,28 @@ export class MessagesService {
 
     const botId = await this.getBotUserId();
     const isBotMentioned = !!(botId && cleanMentions.includes(botId));
+    const resolvedMessageType = this.inferMessageType({
+      explicitType: messageType,
+      conversationId: resolvedConversationId,
+      authorId: actor.sub,
+      botId,
+      subjectType: actor.subjectType,
+    });
+    const responseTimeMs = resolvedConversationId
+      ? await this.getConversationResponseTimeMs(
+          resolvedConversationId,
+          resolvedMessageType,
+          new Date(),
+        )
+      : null;
 
     const msg = await this.prisma.message.create({
       data: {
         channelId,
         conversationId: resolvedConversationId,
-        authorId,
+        messageType: resolvedMessageType,
+        responseTimeMs,
+        authorId: actor.sub,
         content: cleanContent,
         parentId,
         mentions: { create: cleanMentions.map((userId) => ({ userId })) },
@@ -303,11 +501,19 @@ export class MessagesService {
       include: MESSAGE_INCLUDE_FULL,
     });
 
+    await this.updateConversationActivity({
+      conversationId: msg.conversationId ?? null,
+      messageType: resolvedMessageType,
+      createdAt: msg.createdAt,
+    });
+
     // realtime push (full payload)
     this.rt.emitMessageCreated({
       id: msg.id,
       channelId: msg.channelId,
       conversationId: msg.conversationId ?? null,
+      messageType: msg.messageType,
+      responseTimeMs: msg.responseTimeMs ?? null,
       authorId: msg.authorId,
       content: msg.content ?? null,
       createdAt: msg.createdAt.toISOString(),
@@ -370,6 +576,20 @@ export class MessagesService {
       });
     }
 
+    if (
+      msg.conversationId &&
+      resolvedMessageType === MessageContextType.CUSTOMER &&
+      botId
+    ) {
+      void this.maybeRespondInConversation({
+        messageId: msg.id,
+        channelId: msg.channelId,
+        conversationId: msg.conversationId,
+        authorId: msg.authorId,
+        content: msg.content ?? '',
+      });
+    }
+
     const text = (msg.content ?? '').trim();
     const isCommand = text.startsWith('!');
 
@@ -388,7 +608,7 @@ export class MessagesService {
     );
 
     // bot reply (async)
-    if (botId) {
+    if (botId && resolvedMessageType === MessageContextType.CHAT) {
       void this.bot.maybeRespond({
         msg: {
           id: msg.id,
@@ -410,6 +630,47 @@ export class MessagesService {
     }
 
     return msg;
+  }
+
+  private async maybeRespondInConversation(params: {
+    messageId: string;
+    channelId: string;
+    conversationId: string;
+    authorId: string;
+    content: string;
+  }) {
+    const botId = await this.getBotUserId();
+    if (!botId) return;
+
+    try {
+      const history = await this.buildConversationHistoryForAssistant(
+        params.conversationId,
+        params.messageId,
+      );
+
+      const reply = await this.assistant.generateReply({
+        scope: {
+          channelId: params.channelId,
+          conversationId: params.conversationId,
+        },
+        authorId: params.authorId,
+        content: params.content,
+        history,
+        lastRead: null,
+      });
+
+      if (!reply?.reply?.trim()) return;
+
+      await this.createBotMessage(
+        params.channelId,
+        reply.reply,
+        undefined,
+        params.conversationId,
+      );
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn('[assistant] failed to generate conversation reply', err);
+    }
   }
 
   // ---------------------------

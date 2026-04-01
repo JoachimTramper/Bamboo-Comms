@@ -7,8 +7,10 @@ import {
   ArrayUnique,
   ValidateNested,
   IsInt,
+  IsEnum,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+import { MessageContextType } from '@prisma/client';
 
 class AttachmentDto {
   @IsString()
@@ -33,6 +35,10 @@ export class CreateMessageDto {
   @IsOptional()
   @IsString()
   conversationId?: string;
+
+  @IsOptional()
+  @IsEnum(MessageContextType)
+  messageType?: MessageContextType;
 
   @IsOptional()
   @IsString()

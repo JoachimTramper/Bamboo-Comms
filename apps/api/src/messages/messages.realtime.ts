@@ -37,6 +37,8 @@ export type MessageCreatedPayload = {
   id: string;
   channelId: string;
   conversationId: string | null;
+  messageType?: string | null;
+  responseTimeMs?: number | null;
   authorId: string;
   content: string | null;
   createdAt: string;

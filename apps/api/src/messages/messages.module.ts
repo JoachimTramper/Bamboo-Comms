@@ -5,12 +5,18 @@ import { MessagesService } from './messages.service';
 import { PrismaModule } from '../prisma/prisma.module';
 import { WsModule } from '../ws/ws.module';
 import { BotModule } from '../bot/ai-bot.module';
+import { AiAssistantModule } from '../ai-assistant/ai-assistant.module';
 
 import { MessagesRealtime } from './messages.realtime';
 import { MessagesBotOrchestrator } from './messages.bot';
 
 @Module({
-  imports: [PrismaModule, WsModule, forwardRef(() => BotModule)],
+  imports: [
+    PrismaModule,
+    WsModule,
+    forwardRef(() => BotModule),
+    forwardRef(() => AiAssistantModule),
+  ],
   controllers: [MessagesController],
   providers: [MessagesService, MessagesRealtime, MessagesBotOrchestrator],
   exports: [MessagesService],
