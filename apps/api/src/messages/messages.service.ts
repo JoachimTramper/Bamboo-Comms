@@ -728,12 +728,19 @@ export class MessagesService {
     const updated = await this.prisma.message.update({
       where: { id: messageId },
       data: { content: cleanContent },
-      select: { id: true, channelId: true, content: true, updatedAt: true },
+      select: {
+        id: true,
+        channelId: true,
+        conversationId: true,
+        content: true,
+        updatedAt: true,
+      },
     });
 
     this.rt.emitMessageUpdated({
       id: updated.id,
       channelId: updated.channelId,
+      conversationId: updated.conversationId ?? null,
       content: updated.content ?? null,
       updatedAt: updated.updatedAt.toISOString(),
     });
@@ -751,12 +758,13 @@ export class MessagesService {
     const deleted = await this.prisma.message.update({
       where: { id: messageId },
       data: { deletedAt: new Date(), deletedById: userId, content: null },
-      select: { id: true, channelId: true, deletedAt: true },
+      select: { id: true, channelId: true, conversationId: true, deletedAt: true },
     });
 
     this.rt.emitMessageDeleted({
       id: deleted.id,
       channelId,
+      conversationId: deleted.conversationId ?? null,
       deletedAt: deleted.deletedAt!.toISOString(),
       deletedById: userId,
     });
@@ -770,7 +778,7 @@ export class MessagesService {
 
     const msg = await this.prisma.message.findUnique({
       where: { id: messageId },
-      select: { id: true, channelId: true },
+      select: { id: true, channelId: true, conversationId: true },
     });
     if (!msg) throw new NotFoundException('Message not found');
 
@@ -787,6 +795,7 @@ export class MessagesService {
     this.rt.emitReactionAdded({
       messageId,
       channelId: msg.channelId,
+      conversationId: msg.conversationId ?? null,
       emoji: trimmed,
       userId,
     });
@@ -800,7 +809,7 @@ export class MessagesService {
 
     const msg = await this.prisma.message.findUnique({
       where: { id: messageId },
-      select: { id: true, channelId: true },
+      select: { id: true, channelId: true, conversationId: true },
     });
     if (!msg) throw new NotFoundException('Message not found');
 
@@ -819,6 +828,7 @@ export class MessagesService {
     this.rt.emitReactionRemoved({
       messageId,
       channelId: msg.channelId,
+      conversationId: msg.conversationId ?? null,
       emoji: trimmed,
       userId,
     });

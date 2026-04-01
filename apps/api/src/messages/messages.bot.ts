@@ -45,6 +45,7 @@ export class MessagesBotOrchestrator {
     // fire-and-forget style; caller can `void this.bot.maybeRespond(...)`
     this.rt.emitTyping({
       channelId: msg.channelId,
+      conversationId: msg.conversationId ?? null,
       userId: botId,
       displayName: 'BambooBob',
       isTyping: true,
@@ -183,6 +184,7 @@ export class MessagesBotOrchestrator {
     } finally {
       this.rt.emitTyping({
         channelId: msg.channelId,
+        conversationId: msg.conversationId ?? null,
         userId: botId,
         displayName: 'BambooBob',
         isTyping: false,

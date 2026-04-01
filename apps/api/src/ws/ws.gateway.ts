@@ -120,6 +120,44 @@ export class WsGateway
     return true;
   }
 
+  private async canAccessConversation(conversationId: string, userId: string) {
+    const message = await this.prisma.message.findFirst({
+      where: {
+        conversationId,
+        deletedAt: null,
+      },
+      orderBy: { createdAt: 'desc' },
+      select: { channelId: true },
+    });
+
+    if (!message?.channelId) return false;
+
+    return this.canAccessChannel(message.channelId, userId);
+  }
+
+  private async getConversationIdsForChannel(channelId: string) {
+    const rows = await this.prisma.message.findMany({
+      where: {
+        channelId,
+        conversationId: { not: null },
+        deletedAt: null,
+      },
+      distinct: ['conversationId'],
+      select: { conversationId: true },
+    });
+
+    return rows
+      .map((row) => row.conversationId)
+      .filter((conversationId): conversationId is string => !!conversationId);
+  }
+
+  private async joinConversationRoomsForChannel(client: Socket, channelId: string) {
+    const conversationIds = await this.getConversationIdsForChannel(channelId);
+    if (conversationIds.length === 0) return;
+
+    client.join(conversationIds.map((conversationId) => `conv:${conversationId}`));
+  }
+
   private async sendPresenceSnapshot(to: Socket) {
     // current online users + their status from PresenceService
     const onlineWithStatus = this.presence.getOnlineWithStatus();
@@ -214,6 +252,9 @@ export class WsGateway
     });
 
     client.join(memberChannels.map((c) => `chan:${c.id}`));
+    for (const channel of memberChannels) {
+      await this.joinConversationRoomsForChannel(client, channel.id);
+    }
 
     // track socket
     this.socketToUser.set(client.id, { userId });
@@ -286,6 +327,7 @@ export class WsGateway
 
     client.join(`chan:${channelId}`);
     client.join(`view:${channelId}`);
+    await this.joinConversationRoomsForChannel(client, channelId);
 
     // --- HYDRATE READ STATE FOR DMs (so Seen survives relog) ---
     const ch = await this.prisma.channel.findUnique({
@@ -371,21 +413,63 @@ export class WsGateway
     return { ok: true };
   }
 
+  @SubscribeMessage('conversation.join')
+  async handleConversationJoin(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() body: { conversationId: string },
+  ) {
+    const u = (client as any).user as JwtPayload | undefined;
+    if (!u) return;
+
+    const conversationId = body?.conversationId;
+    if (!conversationId) return;
+
+    const ok = await this.canAccessConversation(conversationId, u.sub);
+    if (!ok) return { ok: false, error: 'FORBIDDEN' };
+
+    client.join(`conv:${conversationId}`);
+    return { ok: true };
+  }
+
+  @SubscribeMessage('conversation.leave')
+  handleConversationLeave(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() body: { conversationId: string },
+  ) {
+    const u = (client as any).user as JwtPayload | undefined;
+    if (!u) return;
+
+    const conversationId = body?.conversationId;
+    if (!conversationId) return;
+
+    client.leave(`conv:${conversationId}`);
+    return { ok: true };
+  }
+
   // ---- typing (activity) ----
 
   @SubscribeMessage('typing')
   async handleTyping(
     @ConnectedSocket() client: Socket,
-    @MessageBody() body: { channelId: string; isTyping: boolean },
+    @MessageBody()
+    body: { channelId?: string; conversationId?: string; isTyping: boolean },
   ) {
     const u = (client as any).user as JwtPayload | undefined;
     if (!u) return;
 
     const channelId = body?.channelId;
-    if (!channelId) return;
+    const conversationId = body?.conversationId;
+    if (!channelId && !conversationId) return;
 
-    const ok = await this.canAccessChannel(channelId, u.sub);
-    if (!ok) return;
+    if (channelId) {
+      const ok = await this.canAccessChannel(channelId, u.sub);
+      if (!ok) return;
+    }
+
+    if (conversationId) {
+      const ok = await this.canAccessConversation(conversationId, u.sub);
+      if (!ok) return;
+    }
 
     const user = await this.getUserSafe(u.sub);
     if (!user) return;
@@ -394,11 +478,23 @@ export class WsGateway
     await this.broadcastPresenceUpdate(u.sub);
 
     // Prefer client.to() so the sender doesn't receive their own typing event
-    client.to(`view:${channelId}`).emit('typing', {
-      channelId,
-      userId: user.id,
-      displayName: user.displayName,
-      isTyping: !!body.isTyping,
-    });
+    if (channelId) {
+      client.to(`view:${channelId}`).emit('typing', {
+        channelId,
+        userId: user.id,
+        displayName: user.displayName,
+        isTyping: !!body.isTyping,
+      });
+    }
+
+    if (conversationId) {
+      client.to(`conv:${conversationId}`).emit('conversation.typing', {
+        conversationId,
+        channelId: channelId ?? null,
+        userId: user.id,
+        displayName: user.displayName,
+        isTyping: !!body.isTyping,
+      });
+    }
   }
 }

@@ -49,19 +49,34 @@ export type MessageCreatedPayload = {
   attachments: AttachmentPayload[];
 };
 
+type ConversationScopedPayload = {
+  conversationId?: string | null;
+};
+
 @Injectable()
 export class MessagesRealtime {
   constructor(private ws: WsGateway) {}
+
+  private emitConversationScoped<T extends ConversationScopedPayload>(
+    event: string,
+    payload: T,
+  ) {
+    if (!payload.conversationId) return;
+
+    this.ws.server.to(`conv:${payload.conversationId}`).emit(event, payload);
+  }
 
   emitMessageCreated(payload: MessageCreatedPayload) {
     this.ws.server
       .to(`chan:${payload.channelId}`)
       .emit('message.created', payload);
+    this.emitConversationScoped('conversation.message.created', payload);
   }
 
   emitMessageUpdated(payload: {
     id: string;
     channelId: string;
+    conversationId?: string | null;
     content: string | null;
     updatedAt: string;
   }) {
@@ -70,17 +85,20 @@ export class MessagesRealtime {
       .to(`chan:${payload.channelId}`)
       .to(`view:${payload.channelId}`)
       .emit('message.updated', payload);
+    this.emitConversationScoped('conversation.message.updated', payload);
   }
 
   emitMessageDeleted(payload: {
     id: string;
     channelId: string;
+    conversationId?: string | null;
     deletedAt: string;
     deletedById: string;
   }) {
     this.ws.server
       .to(`chan:${payload.channelId}`)
       .emit('message.deleted', payload);
+    this.emitConversationScoped('conversation.message.deleted', payload);
   }
 
   emitUnreadDelta(payload: {
@@ -101,31 +119,37 @@ export class MessagesRealtime {
   emitReactionAdded(payload: {
     messageId: string;
     channelId: string;
+    conversationId?: string | null;
     emoji: string;
     userId: string;
   }) {
     this.ws.server
       .to(`chan:${payload.channelId}`)
       .emit('message.added', payload);
+    this.emitConversationScoped('conversation.message.added', payload);
   }
 
   emitReactionRemoved(payload: {
     messageId: string;
     channelId: string;
+    conversationId?: string | null;
     emoji: string;
     userId: string;
   }) {
     this.ws.server
       .to(`chan:${payload.channelId}`)
       .emit('message.removed', payload);
+    this.emitConversationScoped('conversation.message.removed', payload);
   }
 
   emitTyping(payload: {
     channelId: string;
+    conversationId?: string | null;
     userId: string;
     displayName: string;
     isTyping: boolean;
   }) {
     this.ws.server.to(`view:${payload.channelId}`).emit('typing', payload);
+    this.emitConversationScoped('conversation.typing', payload);
   }
 }
