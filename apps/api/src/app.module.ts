@@ -14,6 +14,7 @@ import { WsModule } from './ws/ws.module';
 import { UploadsModule } from './uploads/uploads.module';
 import { DigestModule } from './digest/digest.module';
 import { ConversationsModule } from './conversations/conversations.module';
+import { AiAssistantModule } from './ai-assistant/ai-assistant.module';
 
 const repoRoot = process.env.INIT_CWD ?? process.cwd();
 
@@ -33,6 +34,7 @@ const repoRoot = process.env.INIT_CWD ?? process.cwd();
     ChannelsModule,
     MessagesModule,
     ConversationsModule,
+    AiAssistantModule,
     WsModule,
     UploadsModule,
     DigestModule,

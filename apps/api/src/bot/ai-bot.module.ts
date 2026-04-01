@@ -1,13 +1,12 @@
 // apps/api/src/bot/ai-bot.module.ts
 import { Module, forwardRef } from '@nestjs/common';
-import { PrismaModule } from '../prisma/prisma.module';
 import { DigestModule } from '../digest/digest.module';
 import { AiBotService } from './ai-bot.service';
-import { AiChatClient } from './ai-bot.client';
+import { AiAssistantModule } from '../ai-assistant/ai-assistant.module';
 
 @Module({
-  imports: [PrismaModule, forwardRef(() => DigestModule)],
-  providers: [AiBotService, AiChatClient],
+  imports: [forwardRef(() => DigestModule), AiAssistantModule],
+  providers: [AiBotService],
   exports: [AiBotService],
 })
 export class BotModule {}
