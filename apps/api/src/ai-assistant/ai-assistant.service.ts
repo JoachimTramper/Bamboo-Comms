@@ -11,6 +11,7 @@ import {
   type ChatMsg,
 } from '../bot/ai-bot.client';
 import type { GenerateAssistantReplyParams } from './ai-assistant.types';
+import { KnowledgeBaseService } from '../knowledge-base/knowledge-base.service';
 
 @Injectable()
 export class AiAssistantService {
@@ -18,6 +19,7 @@ export class AiAssistantService {
     private prisma: PrismaService,
     private digest: DigestService,
     private aiChat: AiChatClient,
+    private knowledgeBase: KnowledgeBaseService,
   ) {}
 
   private readonly logger = new Logger(AiAssistantService.name);
@@ -176,6 +178,14 @@ export class AiAssistantService {
 
     const history = (params.history ?? '').slice(-6000);
     const lower = intent.cleaned.toLowerCase();
+    const retrievedKnowledge =
+      params.knowledgeContext && params.knowledgeContext.length > 0
+        ? params.knowledgeContext
+        : await this.knowledgeBase.retrieveRelevantSnippets({
+            query: intent.cleaned,
+            conversationId: params.scope?.conversationId ?? null,
+            limit: 4,
+          });
 
     if (mode === 'since_last_read' && !history.trim()) {
       const isDutch =
@@ -204,7 +214,7 @@ export class AiAssistantService {
         ? `Channel ID: ${params.scope.channelId}`
         : 'Context ID: unknown';
 
-    const knowledgeSection = this.buildKnowledgeSection(params.knowledgeContext);
+    const knowledgeSection = this.buildKnowledgeSection(retrievedKnowledge);
     const userContent =
       mode === 'since_last_read'
         ? `${scopeLabel}\nMessages since last read (${effectiveLastRead!.toISOString()}):\n${history}\n\nUser request:\n${intent.cleaned}${knowledgeSection}`

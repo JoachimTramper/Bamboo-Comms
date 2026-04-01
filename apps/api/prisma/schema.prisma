@@ -69,6 +69,19 @@ model Customer {
   conversations Conversation[]
 }
 
+model KnowledgeDocument {
+  id          String   @id @default(cuid())
+  title       String
+  content     String
+  tags        String[] @default([])
+  sourceUrl   String?
+  isPublished Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([isPublished, updatedAt(sort: Desc)])
+}
+
 model Channel {
   id            String                @id @default(cuid())
   name          String

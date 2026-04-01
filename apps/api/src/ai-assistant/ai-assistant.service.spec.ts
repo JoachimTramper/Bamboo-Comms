@@ -15,6 +15,10 @@ describe('AiAssistantService', () => {
     chat: jest.fn(),
   } as any;
 
+  const knowledgeBase = {
+    retrieveRelevantSnippets: jest.fn(),
+  } as any;
+
   let service: AiAssistantService;
 
   beforeEach(() => {
@@ -22,7 +26,8 @@ describe('AiAssistantService', () => {
     prisma.user.findFirst.mockResolvedValue({ id: 'bot-1' });
     aiChat.hasApiKey.mockReturnValue(true);
     aiChat.chat.mockResolvedValue('assistant reply');
-    service = new AiAssistantService(prisma, digest, aiChat);
+    knowledgeBase.retrieveRelevantSnippets.mockResolvedValue([]);
+    service = new AiAssistantService(prisma, digest, aiChat, knowledgeBase);
   });
 
   it('generates a reply without requiring a bot mention', async () => {
@@ -57,5 +62,36 @@ describe('AiAssistantService', () => {
 
     expect(result).toEqual({ reply: 'Nothing new since your last read.' });
     expect(aiChat.chat).not.toHaveBeenCalled();
+  });
+
+  it('injects retrieved knowledge snippets into the prompt when available', async () => {
+    knowledgeBase.retrieveRelevantSnippets.mockResolvedValue([
+      'Billing settings. Update payment methods from Settings > Billing.',
+    ]);
+
+    await service.generateReply({
+      scope: { conversationId: 'conv-3' },
+      authorId: 'user-1',
+      content: 'How do I update billing?',
+      history: '[2026-04-01 10:00] Alex: Need help',
+      lastRead: null,
+    });
+
+    expect(knowledgeBase.retrieveRelevantSnippets).toHaveBeenCalledWith({
+      query: 'How do I update billing?',
+      conversationId: 'conv-3',
+      limit: 4,
+    });
+
+    expect(aiChat.chat).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({
+          role: 'user',
+          content: expect.stringContaining('Knowledge snippets:'),
+        }),
+      ]),
+      expect.any(Object),
+      expect.any(Function),
+    );
   });
 });
