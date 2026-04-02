@@ -3,6 +3,18 @@
 import { useEffect, useState } from "react";
 import { getConversationById, listConversations } from "@/lib/api";
 import type { SupportConversation } from "../types";
+import { getSocket } from "@/lib/socket";
+
+function mergeConversation(
+  current: SupportConversation | null,
+  next: Partial<SupportConversation> & { id: string },
+) {
+  if (!current || current.id !== next.id) {
+    return current;
+  }
+
+  return { ...current, ...next };
+}
 
 export function useConversations(enabled: boolean) {
   const [conversations, setConversations] = useState<SupportConversation[]>([]);
@@ -87,12 +99,42 @@ export function useConversations(enabled: boolean) {
     };
   }, [enabled, activeConversationId]);
 
+  useEffect(() => {
+    if (!enabled) return;
+
+    let socket: ReturnType<typeof getSocket> | null = null;
+    try {
+      socket = getSocket();
+    } catch {
+      socket = null;
+    }
+    if (!socket) return;
+
+    const onConversationUpdate = (payload: SupportConversation) => {
+      setConversations((prev) =>
+        prev.map((item) => (item.id === payload.id ? { ...item, ...payload } : item)),
+      );
+      setActiveConversation((prev) => mergeConversation(prev, payload));
+    };
+
+    socket.on("conversation.updated", onConversationUpdate);
+    socket.on("conversation.assigned", onConversationUpdate);
+    socket.on("conversation.status.updated", onConversationUpdate);
+
+    return () => {
+      socket?.off("conversation.updated", onConversationUpdate);
+      socket?.off("conversation.assigned", onConversationUpdate);
+      socket?.off("conversation.status.updated", onConversationUpdate);
+    };
+  }, [enabled]);
+
   return {
     conversations,
     setConversations,
     activeConversationId,
     setActiveConversationId,
     activeConversation,
+    setActiveConversation,
     loadingList,
     loadingActive,
   };

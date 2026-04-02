@@ -10,6 +10,8 @@ import {
 import { useRouter } from "next/navigation";
 
 import {
+  assignConversation,
+  transitionConversation,
   logout,
   updateAvatar,
   uploadAvatarFile,
@@ -23,7 +25,11 @@ import {
   showBrowserNotification,
 } from "@/lib/notifications";
 
-import type { Message, Me } from "./types";
+import type {
+  ConversationLifecycleAction,
+  Message,
+  Me,
+} from "./types";
 
 import { MessageList } from "./components/MessageList";
 import { Composer } from "./components/Composer";
@@ -33,6 +39,7 @@ import { TypingIndicator } from "./components/TypingIndicator";
 import { SearchModal } from "./components/SearchModal";
 import { ChatTitleBubble } from "./components/ChatTitleBubble";
 import { SupportConversationHeader } from "./components/SupportConversationHeader";
+import { SupportConversationMeta } from "./components/SupportConversationMeta";
 
 import { useMessages } from "./hooks/useMessages";
 import { useTyping } from "./hooks/useTyping";
@@ -85,9 +92,11 @@ export default function ChatPage() {
   const isAdmin = user?.role === "ADMIN";
   const {
     conversations,
+    setConversations,
     activeConversationId,
     setActiveConversationId,
     activeConversation,
+    setActiveConversation,
     loadingList: conversationsLoading,
     loadingActive: activeConversationLoading,
   } = useConversations(!!isAdmin);
@@ -114,6 +123,11 @@ export default function ChatPage() {
     null,
   );
   const [searchOpen, setSearchOpen] = useState(false);
+  const [conversationActionError, setConversationActionError] = useState<
+    string | null
+  >(null);
+  const [updatingStatus, setUpdatingStatus] = useState(false);
+  const [updatingAssignment, setUpdatingAssignment] = useState(false);
 
   useMobileSidebar(sidebarOpen, setSidebarOpen);
 
@@ -234,7 +248,59 @@ export default function ChatPage() {
   useEffect(() => {
     setReplyTo(null);
     setSearchOpen(false);
+    setConversationActionError(null);
   }, [activeView, activeConversationId, active]);
+
+  function syncConversationState(
+    nextConversation: Exclude<typeof activeConversation, null>,
+  ) {
+    setActiveConversation(nextConversation);
+    setConversations((prev) =>
+      prev.map((item) =>
+        item.id === nextConversation.id ? { ...item, ...nextConversation } : item,
+      ),
+    );
+  }
+
+  async function handleTransitionConversation(
+    action: ConversationLifecycleAction,
+  ) {
+    if (!activeConversationId) return;
+
+    try {
+      setConversationActionError(null);
+      setUpdatingStatus(true);
+      const updated = await transitionConversation(activeConversationId, action);
+      syncConversationState(updated);
+    } catch (e: any) {
+      setConversationActionError(
+        e?.response?.data?.message ??
+          e?.message ??
+          "Failed to update conversation status",
+      );
+    } finally {
+      setUpdatingStatus(false);
+    }
+  }
+
+  async function handleAssignConversation(assigneeId?: string | null) {
+    if (!activeConversationId) return;
+
+    try {
+      setConversationActionError(null);
+      setUpdatingAssignment(true);
+      const updated = await assignConversation(activeConversationId, assigneeId);
+      syncConversationState(updated);
+    } catch (e: any) {
+      setConversationActionError(
+        e?.response?.data?.message ??
+          e?.message ??
+          "Failed to update conversation assignee",
+      );
+    } finally {
+      setUpdatingAssignment(false);
+    }
+  }
 
   // ---- handlers ----
   async function handleSend(files: File[] = []) {
@@ -507,9 +573,34 @@ export default function ChatPage() {
                 </div>
               ) : null}
 
-            <div className="h-full flex flex-col">
+            <div
+              className={`h-full flex flex-col ${
+                activeView === "support"
+                  ? "bg-[radial-gradient(circle_at_top_left,_rgba(226,232,240,0.9),_rgba(245,245,244,0.92)_42%,_rgba(255,255,255,0.88)_100%)]"
+                  : ""
+              }`}
+            >
               {activeView === "support" && activeConversation && (
                 <SupportConversationHeader conversation={activeConversation} />
+              )}
+
+              {activeView === "support" && activeConversation && (
+                <SupportConversationMeta
+                  conversation={activeConversation}
+                  meId={user.sub}
+                  canManage={user.role === "ADMIN"}
+                  updatingStatus={updatingStatus}
+                  updatingAssignment={updatingAssignment}
+                  onTransition={handleTransitionConversation}
+                  onAssignToMe={() => handleAssignConversation(user.sub)}
+                  onUnassign={() => handleAssignConversation(null)}
+                />
+              )}
+
+              {activeView === "support" && conversationActionError && (
+                <div className="border-b border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700">
+                  {conversationActionError}
+                </div>
               )}
 
               {activeView === "support" && !activeConversationLoading && (

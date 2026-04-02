@@ -375,3 +375,26 @@ export async function getConversationById(conversationId: string) {
   const { data } = await api.get(`/conversations/${conversationId}`);
   return data as SupportConversation;
 }
+
+export async function assignConversation(
+  conversationId: string,
+  assigneeId?: string | null,
+) {
+  const { data } = await api.patch(`/conversations/${conversationId}/assign`, {
+    assigneeId: assigneeId ?? undefined,
+  });
+  return data as SupportConversation;
+}
+
+export async function transitionConversation(
+  conversationId: string,
+  action: "OPEN" | "PENDING" | "RESOLVE" | "CLOSE" | "REOPEN",
+) {
+  const { data } = await api.patch(
+    `/conversations/${conversationId}/lifecycle`,
+    {
+      action,
+    },
+  );
+  return data as SupportConversation;
+}

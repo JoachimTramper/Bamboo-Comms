@@ -34,9 +34,12 @@ export function SupportConversationHeader({ conversation }: Props) {
     "Unknown customer";
 
   return (
-    <div className="border-b border-neutral-200 bg-white/95 px-4 py-3 backdrop-blur-sm">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+    <div className="border-b border-neutral-200 bg-white/95 px-4 py-4 backdrop-blur-sm">
+      <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-neutral-500">
+            Support Conversation
+          </div>
           <div className="text-lg font-semibold text-neutral-900">
             {conversation.subject ?? "Untitled conversation"}
           </div>
@@ -65,6 +68,9 @@ export function SupportConversationHeader({ conversation }: Props) {
           </span>
           <span className="rounded-full border border-neutral-200 bg-neutral-50 px-2.5 py-1 text-neutral-600">
             {conversation.assignee?.displayName ?? "Unassigned"}
+          </span>
+          <span className="rounded-full border border-neutral-200 bg-white px-2.5 py-1 text-neutral-500">
+            {conversation.messageCount} messages
           </span>
         </div>
       </div>

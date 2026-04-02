@@ -88,6 +88,13 @@ export type ConversationStatus = "OPEN" | "PENDING" | "RESOLVED" | "CLOSED";
 
 export type ConversationPriority = "LOW" | "NORMAL" | "HIGH" | "URGENT";
 
+export type ConversationLifecycleAction =
+  | "OPEN"
+  | "PENDING"
+  | "RESOLVE"
+  | "CLOSE"
+  | "REOPEN";
+
 export type SupportConversation = {
   id: string;
   subject: string | null;
