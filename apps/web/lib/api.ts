@@ -1,7 +1,7 @@
 // apps/web/lib/api.ts
 import axios from "axios";
 import { refreshSocketAuth } from "@/lib/socket";
-import type { Message } from "@/app/chat/types";
+import type { Message, SupportConversation } from "@/app/chat/types";
 
 const api = axios.create({
   baseURL: process.env.NEXT_PUBLIC_API_BASE || "http://localhost:3000",
@@ -211,11 +211,12 @@ export async function createChannel(name: string) {
 
 export async function listMessages(
   channelId: string,
-  opts?: { take?: number; cursor?: string },
+  opts?: { take?: number; cursor?: string; conversationId?: string },
 ): Promise<Message[]> {
   const params = new URLSearchParams();
   if (opts?.take) params.set("take", String(opts.take));
   if (opts?.cursor) params.set("cursor", opts.cursor);
+  if (opts?.conversationId) params.set("conversationId", opts.conversationId);
 
   const qs = params.toString();
   const { data } = await api.get(
@@ -245,6 +246,7 @@ export async function searchMessages(
 export async function sendMessage(
   channelId: string,
   content?: string,
+  conversationId?: string,
   replyToMessageId?: string,
   mentionUserIds: string[] = [],
   attachments: Array<any> = [],
@@ -252,6 +254,7 @@ export async function sendMessage(
 ) {
   const { data } = await api.post(`/channels/${channelId}/messages`, {
     content,
+    conversationId,
     replyToMessageId,
     mentionUserIds,
     attachments,
@@ -361,4 +364,14 @@ export async function listChannelsWithUnread() {
     unread: number;
     lastRead: string | null;
   }>;
+}
+
+export async function listConversations() {
+  const { data } = await api.get("/conversations");
+  return data as SupportConversation[];
+}
+
+export async function getConversationById(conversationId: string) {
+  const { data } = await api.get(`/conversations/${conversationId}`);
+  return data as SupportConversation;
 }

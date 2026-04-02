@@ -32,11 +32,18 @@ export class MessagesController {
     @User() user: { sub: string },
     @Query('take') take?: string,
     @Query('cursor') cursor?: string,
+    @Query('conversationId') conversationId?: string,
   ) {
     const n = Number(take);
     const safeTake = Number.isFinite(n) ? n : 50;
 
-    return this.svc.list(channelId, user.sub, safeTake, cursor);
+    return this.svc.list(
+      channelId,
+      user.sub,
+      safeTake,
+      cursor,
+      conversationId,
+    );
   }
 
   @Get('search')

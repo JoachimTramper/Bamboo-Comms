@@ -8,6 +8,8 @@ export function normalizeMessage(p: any): Message {
     content: p.content ?? "",
     authorId: p.authorId ?? p?.author?.id ?? "unknown",
     channelId,
+    conversationId:
+      p?.conversationId ?? p?.conversation?.id ?? p?.conversation_id ?? null,
     createdAt:
       typeof p.createdAt === "string"
         ? p.createdAt

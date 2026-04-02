@@ -400,11 +400,20 @@ export class MessagesService {
   // Read
   // ---------------------------
 
-  async list(channelId: string, userId: string, take = 50, cursor?: string) {
+  async list(
+    channelId: string,
+    userId: string,
+    take = 50,
+    cursor?: string,
+    conversationId?: string,
+  ) {
     await this.assertCanAccessChannel(channelId, userId);
 
     return this.prisma.message.findMany({
-      where: { channelId },
+      where: {
+        channelId,
+        ...(conversationId ? { conversationId } : {}),
+      },
       orderBy: { createdAt: 'desc' },
       ...this.page(take, cursor),
       include: MESSAGE_INCLUDE_FULL,

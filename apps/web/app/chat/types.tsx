@@ -44,6 +44,7 @@ export type MessageAttachment = {
 export type Message = {
   id: string;
   channelId: string;
+  conversationId?: string | null;
   content: string | null;
   authorId: string;
   createdAt: string;
@@ -81,4 +82,49 @@ export type OnlineUser = {
 export type ChannelWithUnread = Channel & {
   unread?: number;
   lastRead?: string | null;
+};
+
+export type ConversationStatus = "OPEN" | "PENDING" | "RESOLVED" | "CLOSED";
+
+export type ConversationPriority = "LOW" | "NORMAL" | "HIGH" | "URGENT";
+
+export type SupportConversation = {
+  id: string;
+  subject: string | null;
+  status: ConversationStatus;
+  priority: ConversationPriority;
+  createdAt: string;
+  updatedAt: string;
+  lastMessageAt: string | null;
+  lastCustomerMessageAt: string | null;
+  lastSupportReplyAt: string | null;
+  firstResponseAt: string | null;
+  resolvedAt: string | null;
+  primaryChannelId: string | null;
+  messageCount: number;
+  customerId?: string | null;
+  assigneeId?: string | null;
+  customer?: {
+    id: string;
+    email?: string | null;
+    name?: string | null;
+    company?: string | null;
+    planTier?: string | null;
+  } | null;
+  assignee?: {
+    id: string;
+    email: string;
+    displayName: string;
+    role: "USER" | "ADMIN";
+  } | null;
+  latestMessagePreview?: {
+    id: string;
+    content: string | null;
+    createdAt: string;
+    channelId: string;
+    author: {
+      id: string;
+      displayName: string;
+    };
+  } | null;
 };

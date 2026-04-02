@@ -24,11 +24,57 @@ const CONVERSATION_INCLUDE = {
       role: true,
     },
   },
+  messages: {
+    where: { deletedAt: null },
+    orderBy: { createdAt: 'desc' },
+    take: 1,
+    select: {
+      id: true,
+      content: true,
+      createdAt: true,
+      channelId: true,
+      author: {
+        select: {
+          id: true,
+          displayName: true,
+        },
+      },
+    },
+  },
+  _count: {
+    select: {
+      messages: true,
+    },
+  },
 } satisfies Prisma.ConversationInclude;
+
+type ConversationWithPreview = Prisma.ConversationGetPayload<{
+  include: typeof CONVERSATION_INCLUDE;
+}>;
 
 @Injectable()
 export class ConversationsService {
   constructor(private prisma: PrismaService) {}
+
+  private serializeConversation(conversation: ConversationWithPreview) {
+    const { messages, _count, ...rest } = conversation;
+    const latestMessage = messages[0] ?? null;
+
+    return {
+      ...rest,
+      primaryChannelId: latestMessage?.channelId ?? null,
+      latestMessagePreview: latestMessage
+        ? {
+            id: latestMessage.id,
+            content: latestMessage.content,
+            createdAt: latestMessage.createdAt,
+            channelId: latestMessage.channelId,
+            author: latestMessage.author,
+          }
+        : null,
+      messageCount: _count.messages,
+    };
+  }
 
   private assertCreateConversationInput(dto?: CreateConversationDto) {
     if (!dto) {
@@ -101,12 +147,16 @@ export class ConversationsService {
       ];
     }
 
-    return this.prisma.conversation.findMany({
+    const conversations = await this.prisma.conversation.findMany({
       where,
       take: filters.take ?? 50,
       orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
       include: CONVERSATION_INCLUDE,
     });
+
+    return conversations.map((conversation) =>
+      this.serializeConversation(conversation),
+    );
   }
 
   async getConversationById(id: string) {
@@ -119,14 +169,14 @@ export class ConversationsService {
       throw new NotFoundException('Conversation not found');
     }
 
-    return conversation;
+    return this.serializeConversation(conversation);
   }
 
   async createConversation(dto: CreateConversationDto) {
     this.assertCreateConversationInput(dto);
     await this.ensureReferences(dto.customerId, dto.assigneeId);
 
-    return this.prisma.conversation.create({
+    const conversation = await this.prisma.conversation.create({
       data: {
         subject: dto.subject?.trim() || null,
         status: dto.status ?? ConversationStatus.OPEN,
@@ -137,13 +187,15 @@ export class ConversationsService {
       },
       include: CONVERSATION_INCLUDE,
     });
+
+    return this.serializeConversation(conversation);
   }
 
   async updateConversation(id: string, dto: UpdateConversationDto) {
     await this.getConversationById(id);
     await this.ensureReferences(dto.customerId, dto.assigneeId);
 
-    return this.prisma.conversation.update({
+    const conversation = await this.prisma.conversation.update({
       where: { id },
       data: {
         subject:
@@ -164,12 +216,14 @@ export class ConversationsService {
       },
       include: CONVERSATION_INCLUDE,
     });
+
+    return this.serializeConversation(conversation);
   }
 
   async updateConversationStatus(id: string, status: ConversationStatus) {
     await this.getConversationById(id);
 
-    return this.prisma.conversation.update({
+    const conversation = await this.prisma.conversation.update({
       where: { id },
       data: {
         status,
@@ -177,17 +231,21 @@ export class ConversationsService {
       },
       include: CONVERSATION_INCLUDE,
     });
+
+    return this.serializeConversation(conversation);
   }
 
   async assignConversation(id: string, assigneeId?: string) {
     await this.getConversationById(id);
     await this.ensureReferences(undefined, assigneeId);
 
-    return this.prisma.conversation.update({
+    const conversation = await this.prisma.conversation.update({
       where: { id },
       data: { assigneeId: assigneeId || null },
       include: CONVERSATION_INCLUDE,
     });
+
+    return this.serializeConversation(conversation);
   }
 
   async transitionConversation(

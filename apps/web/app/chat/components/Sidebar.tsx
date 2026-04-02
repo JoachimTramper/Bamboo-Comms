@@ -3,6 +3,8 @@
 import type { ChannelWithUnread, OnlineUser } from "../types";
 import { MessageCircle } from "lucide-react";
 import { Avatar } from "./Avatar";
+import { SupportInboxList } from "./SupportInboxList";
+import type { SupportConversation } from "../types";
 
 type Props = {
   regularChannels: ChannelWithUnread[];
@@ -19,6 +21,10 @@ type Props = {
   formatLastOnline: (d?: string | null) => string;
   meId: string;
   isAdmin: boolean;
+  conversations?: SupportConversation[];
+  activeConversationId?: string | null;
+  onSelectConversation?: (conversationId: string) => void;
+  conversationsLoading?: boolean;
 };
 
 type PresenceStatus = "online" | "idle" | "offline";
@@ -38,6 +44,10 @@ export function Sidebar({
   formatLastOnline,
   meId,
   isAdmin,
+  conversations = [],
+  activeConversationId = null,
+  onSelectConversation,
+  conversationsLoading = false,
 }: Props) {
   // --- Presence helpers ---
   function getUserStatus(userId: string): PresenceStatus {
@@ -69,6 +79,15 @@ export function Sidebar({
     <aside className="p-3 overflow-auto min-h-0">
       {/* Channels + DMs */}
       <div className="space-y-3">
+        {isAdmin && onSelectConversation && (
+          <SupportInboxList
+            conversations={conversations}
+            activeConversationId={activeConversationId}
+            onSelectConversation={onSelectConversation}
+            loading={conversationsLoading}
+          />
+        )}
+
         {/* Channels */}
         <section>
           <h2 className="font-semibold text-xs uppercase tracking-wide text-neutral-800">

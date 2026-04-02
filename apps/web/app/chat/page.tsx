@@ -32,6 +32,7 @@ import { ChatHeader } from "./components/ChatHeader";
 import { TypingIndicator } from "./components/TypingIndicator";
 import { SearchModal } from "./components/SearchModal";
 import { ChatTitleBubble } from "./components/ChatTitleBubble";
+import { SupportConversationHeader } from "./components/SupportConversationHeader";
 
 import { useMessages } from "./hooks/useMessages";
 import { useTyping } from "./hooks/useTyping";
@@ -44,6 +45,7 @@ import { useMentionCandidates } from "./hooks/useMentionCandidates";
 // refactor hooks
 import { useAuthGuard } from "./hooks/useAuthGuard";
 import { useChannels } from "./hooks/useChannels";
+import { useConversations } from "./hooks/useConversations";
 import { useDisplayNameResolver } from "./hooks/useDisplayNameResolver";
 
 import {
@@ -80,6 +82,18 @@ export default function ChatPage() {
     openDM,
   } = useChannels(user);
 
+  const isAdmin = user?.role === "ADMIN";
+  const {
+    conversations,
+    activeConversationId,
+    setActiveConversationId,
+    activeConversation,
+    loadingList: conversationsLoading,
+    loadingActive: activeConversationLoading,
+  } = useConversations(!!isAdmin);
+
+  const [activeView, setActiveView] = useState<"chat" | "support">("chat");
+
   // Persist active channel in localStorage
   function setActiveAndPersist(id: string) {
     setActive(id);
@@ -105,7 +119,23 @@ export default function ChatPage() {
 
   // --- presence / typing / unread ---
   const { othersOnline, recently } = usePresence(user?.sub);
-  const { label: typingLabel, emitTyping } = useTyping(active, user?.sub);
+  const supportChannelId = activeConversation?.primaryChannelId ?? null;
+  const messageChannelId = activeView === "support" ? supportChannelId : active;
+  const selectedConversationId =
+    activeView === "support" ? activeConversationId : null;
+  const showSupportThread =
+    activeView === "support" &&
+    !!activeConversation &&
+    !!supportChannelId &&
+    !!messageChannelId;
+
+  const { label: typingLabel, emitTyping } = useTyping(
+    {
+      channelId: messageChannelId,
+      conversationId: selectedConversationId,
+    },
+    user?.sub,
+  );
 
   useUnread({ active, myId: user?.sub, setChannels });
 
@@ -144,7 +174,8 @@ export default function ChatPage() {
     hasMore,
     lastReadMessageIdByOthers,
     retrySend,
-  } = useMessages(active, user?.sub, {
+  } = useMessages(messageChannelId, user?.sub, {
+    conversationId: selectedConversationId,
     lastReadSnapshot: activeChannel?.lastRead ?? null,
     resolveDisplayName,
     onIncomingMessage: (msg) => {
@@ -153,7 +184,7 @@ export default function ChatPage() {
       // skip own messages
       if (msg.authorId === user.sub) return;
 
-      const isDifferentChannel = msg.channelId !== active;
+      const isDifferentChannel = msg.channelId !== messageChannelId;
       const isMentioned = msg.mentions?.some((m) => m.userId === user.sub);
 
       if (isMentioned && isDifferentChannel) {
@@ -184,6 +215,7 @@ export default function ChatPage() {
   useEffect(() => {
     if (!active) return;
     if (!user?.sub) return;
+    if (activeView !== "chat") return;
 
     markChannelRead(active)
       .then((res) => {
@@ -197,11 +229,16 @@ export default function ChatPage() {
         );
       })
       .catch(() => {});
-  }, [active, user?.sub, setChannels]);
+  }, [active, activeView, user?.sub, setChannels]);
+
+  useEffect(() => {
+    setReplyTo(null);
+    setSearchOpen(false);
+  }, [activeView, activeConversationId, active]);
 
   // ---- handlers ----
   async function handleSend(files: File[] = []) {
-    if (!active) return;
+    if (!messageChannelId) return;
 
     const trimmed = text.trim();
     const hasText = trimmed.length > 0;
@@ -296,7 +333,11 @@ export default function ChatPage() {
 
   function handleTypingInput(v: string) {
     setText(v);
-    if (active && user) emitTyping(active);
+    if (!user) return;
+    emitTyping({
+      channelId: messageChannelId,
+      conversationId: selectedConversationId,
+    });
   }
 
   function handleLogout() {
@@ -364,7 +405,7 @@ export default function ChatPage() {
     <div className="fixed inset-0 overflow-hidden flex flex-col">
       <ChatHeader
         user={user}
-        activeChannel={activeChannel}
+        activeChannel={activeView === "chat" ? activeChannel : undefined}
         fileInputRef={fileInputRef}
         avatarUploading={avatarUploading}
         onAvatarChange={handleAvatarFileChange}
@@ -376,6 +417,12 @@ export default function ChatPage() {
         onEnableNotifications={() => ensureNotificationPermission()}
         onOpenSearch={() => setSearchOpen(true)}
         onChangeUsername={handleChangeUsername}
+        centerTitle={
+          activeView === "support"
+            ? (activeConversation?.subject ?? "Support inbox")
+            : undefined
+        }
+        searchDisabled={activeView === "support"}
       />
 
       <div className="flex-1 min-h-0 flex relative md:bg-stone-100">
@@ -400,6 +447,7 @@ export default function ChatPage() {
             dmChannels={dmChannels}
             active={active}
             setActive={(id) => {
+              setActiveView("chat");
               setActiveAndPersist(id);
               setSidebarOpen(false);
             }}
@@ -413,6 +461,16 @@ export default function ChatPage() {
             formatLastOnline={formatLastOnline}
             meId={user.sub}
             isAdmin={user.role === "ADMIN"}
+            conversations={conversations}
+            activeConversationId={
+              activeView === "support" ? activeConversationId : null
+            }
+            onSelectConversation={(conversationId) => {
+              setActiveView("support");
+              setActiveConversationId(conversationId);
+              setSidebarOpen(false);
+            }}
+            conversationsLoading={conversationsLoading}
           />
         </div>
 
@@ -433,65 +491,93 @@ export default function ChatPage() {
           "
         >
           <div className="flex-1 min-h-0 relative z-20">
-            {(activeChannel?.isDirect ?? false) ? (
+            {activeView === "chat" && (activeChannel?.isDirect ?? false) ? (
               <div className="absolute top-0 left-0 right-0 z-40">
                 <ChatTitleBubble
                   activeChannel={activeChannel}
                   dmPeer={dmPeer}
                 />
               </div>
-            ) : (
-              <div className="md:hidden absolute top-0 left-0 right-0 z-40">
-                <ChatTitleBubble
-                  activeChannel={activeChannel}
-                  dmPeer={dmPeer}
-                />
-              </div>
-            )}
+              ) : activeView === "chat" ? (
+                <div className="md:hidden absolute top-0 left-0 right-0 z-40">
+                  <ChatTitleBubble
+                    activeChannel={activeChannel}
+                    dmPeer={dmPeer}
+                  />
+                </div>
+              ) : null}
 
             <div className="h-full flex flex-col">
-              <MessageList
-                msgs={msgs}
-                meId={user.sub}
-                channelId={active!}
-                listRef={listRef}
-                editingId={editingId}
-                editText={editText}
-                setEditText={setEditText}
-                onStartEdit={(m) => startEdit(m)}
-                onSaveEdit={(m) => active && saveEdit(m.id)}
-                onCancelEdit={cancelEdit}
-                onDelete={(m) => active && removeMessage(m.id)}
-                onReply={(m) => handleReply(m)}
-                formatDateTime={formatDateTime}
-                onScroll={handleScroll}
-                isDirect={activeChannel?.isDirect ?? false}
-                lastReadMessageIdByOthers={lastReadMessageIdByOthers}
-                scrollToMessageId={scrollToMessageId}
-                onScrolledToMessage={() => setScrollToMessageId(null)}
-                loadingOlder={loadingOlder}
-                onRetrySend={retrySend}
-              />
+              {activeView === "support" && activeConversation && (
+                <SupportConversationHeader conversation={activeConversation} />
+              )}
+
+              {activeView === "support" && !activeConversationLoading && (
+                !activeConversation ? (
+                  <div className="flex-1 grid place-items-center px-6 text-center text-sm text-neutral-500">
+                    Select a support conversation from the inbox to view it.
+                  </div>
+                ) : !supportChannelId ? (
+                  <div className="flex-1 grid place-items-center px-6 text-center text-sm text-neutral-500">
+                    This conversation does not have a linked message channel yet.
+                  </div>
+                ) : null
+              )}
+
+              {activeConversationLoading && activeView === "support" && (
+                <div className="flex-1 grid place-items-center px-6 text-sm text-neutral-500">
+                  Loading conversation...
+                </div>
+              )}
+
+              {(activeView === "chat" || showSupportThread) && messageChannelId && (
+                <MessageList
+                  msgs={msgs}
+                  meId={user.sub}
+                  channelId={messageChannelId}
+                  listRef={listRef}
+                  editingId={editingId}
+                  editText={editText}
+                  setEditText={setEditText}
+                  onStartEdit={(m) => startEdit(m)}
+                  onSaveEdit={(m) => saveEdit(m.id)}
+                  onCancelEdit={cancelEdit}
+                  onDelete={(m) => removeMessage(m.id)}
+                  onReply={(m) => handleReply(m)}
+                  formatDateTime={formatDateTime}
+                  onScroll={handleScroll}
+                  isDirect={
+                    activeView === "chat" ? (activeChannel?.isDirect ?? false) : false
+                  }
+                  lastReadMessageIdByOthers={lastReadMessageIdByOthers}
+                  scrollToMessageId={scrollToMessageId}
+                  onScrolledToMessage={() => setScrollToMessageId(null)}
+                  loadingOlder={loadingOlder}
+                  onRetrySend={retrySend}
+                />
+              )}
             </div>
           </div>
 
           <div className="absolute bottom-0 left-0 right-0 z-30">
             <TypingIndicator label={typingLabel} />
-            <Composer
-              value={text}
-              onChange={handleTypingInput}
-              onSend={handleSend}
-              replyTo={replyTo}
-              onCancelReply={() => setReplyTo(null)}
-              mentionCandidates={mentionCandidates}
-            />
+            {(activeView === "chat" || showSupportThread) && messageChannelId && (
+              <Composer
+                value={text}
+                onChange={handleTypingInput}
+                onSend={handleSend}
+                replyTo={replyTo}
+                onCancelReply={() => setReplyTo(null)}
+                mentionCandidates={mentionCandidates}
+              />
+            )}
           </div>
         </main>
       </div>
 
       <SearchModal
-        open={searchOpen}
-        channelId={active}
+        open={searchOpen && activeView === "chat"}
+        channelId={activeView === "chat" ? active : null}
         activeChannel={activeChannel}
         dmPeerName={dmPeer?.displayName ?? null}
         onClose={() => setSearchOpen(false)}

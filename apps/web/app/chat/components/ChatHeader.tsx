@@ -30,6 +30,8 @@ type Props = {
   onEnableNotifications: () => void;
   onOpenSearch: () => void;
   onChangeUsername: (nextDisplayName: string) => Promise<void> | void;
+  centerTitle?: string;
+  searchDisabled?: boolean;
 };
 
 export function ChatHeader({
@@ -46,6 +48,8 @@ export function ChatHeader({
   onEnableNotifications,
   onOpenSearch,
   onChangeUsername,
+  centerTitle,
+  searchDisabled = false,
 }: Props) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -183,7 +187,7 @@ export function ChatHeader({
           ) : (
             <div className="min-w-0 text-center">
               <div className="text-sm font-semibold truncate text-neutral-900">
-                #{activeChannel?.name ?? "Chat"}
+                {centerTitle ?? `#${activeChannel?.name ?? "Chat"}`}
               </div>
             </div>
           )}
@@ -194,7 +198,8 @@ export function ChatHeader({
           <button
             type="button"
             onClick={onOpenSearch}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-full hover:bg-neutral-100 text-neutral-600"
+            disabled={searchDisabled}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-full hover:bg-neutral-100 text-neutral-600 disabled:cursor-not-allowed disabled:opacity-40"
             aria-label="Search"
           >
             <Search size={18} strokeWidth={2} />
