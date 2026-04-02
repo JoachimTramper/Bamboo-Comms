@@ -11,6 +11,7 @@ import { useRouter } from "next/navigation";
 
 import {
   assignConversation,
+  generateConversationDraft,
   transitionConversation,
   logout,
   updateAvatar,
@@ -40,6 +41,7 @@ import { SearchModal } from "./components/SearchModal";
 import { ChatTitleBubble } from "./components/ChatTitleBubble";
 import { SupportConversationHeader } from "./components/SupportConversationHeader";
 import { SupportConversationMeta } from "./components/SupportConversationMeta";
+import { SupportAssistantPanel } from "./components/SupportAssistantPanel";
 
 import { useMessages } from "./hooks/useMessages";
 import { useTyping } from "./hooks/useTyping";
@@ -128,6 +130,11 @@ export default function ChatPage() {
   >(null);
   const [updatingStatus, setUpdatingStatus] = useState(false);
   const [updatingAssignment, setUpdatingAssignment] = useState(false);
+  const [assistantInstructions, setAssistantInstructions] = useState("");
+  const [assistantDraft, setAssistantDraft] = useState("");
+  const [assistantDraftAt, setAssistantDraftAt] = useState<string | null>(null);
+  const [assistantLoading, setAssistantLoading] = useState(false);
+  const [assistantError, setAssistantError] = useState<string | null>(null);
 
   useMobileSidebar(sidebarOpen, setSidebarOpen);
 
@@ -249,6 +256,9 @@ export default function ChatPage() {
     setReplyTo(null);
     setSearchOpen(false);
     setConversationActionError(null);
+    setAssistantDraft("");
+    setAssistantDraftAt(null);
+    setAssistantError(null);
   }, [activeView, activeConversationId, active]);
 
   function syncConversationState(
@@ -300,6 +310,32 @@ export default function ChatPage() {
     } finally {
       setUpdatingAssignment(false);
     }
+  }
+
+  async function handleGenerateDraft() {
+    if (!activeConversationId) return;
+
+    try {
+      setAssistantError(null);
+      setAssistantLoading(true);
+      const result = await generateConversationDraft(
+        activeConversationId,
+        assistantInstructions,
+      );
+      setAssistantDraft(result.draft ?? "");
+      setAssistantDraftAt(result.generatedAt ?? null);
+    } catch (e: any) {
+      setAssistantError(
+        e?.response?.data?.message ?? e?.message ?? "Failed to generate draft",
+      );
+    } finally {
+      setAssistantLoading(false);
+    }
+  }
+
+  function handleUseDraft() {
+    if (!assistantDraft) return;
+    setText(assistantDraft);
   }
 
   // ---- handlers ----
@@ -594,6 +630,24 @@ export default function ChatPage() {
                   onTransition={handleTransitionConversation}
                   onAssignToMe={() => handleAssignConversation(user.sub)}
                   onUnassign={() => handleAssignConversation(null)}
+                />
+              )}
+
+              {activeView === "support" && activeConversation && (
+                <SupportAssistantPanel
+                  draft={assistantDraft}
+                  generatedAt={assistantDraftAt}
+                  instructions={assistantInstructions}
+                  loading={assistantLoading}
+                  error={assistantError}
+                  onInstructionsChange={setAssistantInstructions}
+                  onGenerate={handleGenerateDraft}
+                  onUseDraft={handleUseDraft}
+                  onClearDraft={() => {
+                    setAssistantDraft("");
+                    setAssistantDraftAt(null);
+                    setAssistantError(null);
+                  }}
                 />
               )}
 

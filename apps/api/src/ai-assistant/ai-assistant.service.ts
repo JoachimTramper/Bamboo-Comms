@@ -1,9 +1,15 @@
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  Logger,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { DigestService } from '../digest/digest.service';
 import { AI_BOT_NAME } from '../bot/ai-bot.constants';
 import { parseBotIntent, resolveBotMode } from '../bot/ai-bot.intent';
 import { formatHistoryLine } from '../bot/ai-bot.format';
+import { MessageContextType } from '@prisma/client';
 import {
   AiChatClient,
   type AiChatErrorKey,
@@ -12,6 +18,7 @@ import {
 } from '../bot/ai-bot.client';
 import type { GenerateAssistantReplyParams } from './ai-assistant.types';
 import { KnowledgeBaseService } from '../knowledge-base/knowledge-base.service';
+import type { AuthPrincipal } from '../auth/auth.types';
 
 @Injectable()
 export class AiAssistantService {
@@ -145,6 +152,130 @@ export class AiAssistantService {
       .slice(0, 8)
       .map((snippet, index) => `[${index + 1}] ${snippet}`)
       .join('\n')}`;
+  }
+
+  private async assertCanAccessChannel(channelId: string, userId: string) {
+    const ch = await this.prisma.channel.findUnique({
+      where: { id: channelId },
+      select: {
+        id: true,
+        name: true,
+        isDirect: true,
+        members: { where: { id: userId }, select: { id: true } },
+      },
+    });
+
+    if (!ch) {
+      throw new BadRequestException('Channel not found for conversation');
+    }
+
+    if (ch.name === 'general' && ch.isDirect === false) return;
+    if (ch.isDirect && ch.members.length === 0) {
+      throw new ForbiddenException('Not allowed to access this conversation');
+    }
+  }
+
+  async generateSupportDraft(
+    conversationId: string,
+    actor: AuthPrincipal,
+    instructions?: string,
+  ) {
+    if (actor.subjectType !== 'user') {
+      throw new ForbiddenException(
+        'Only agent users can generate support drafts',
+      );
+    }
+
+    const messages = await this.prisma.message.findMany({
+      where: {
+        conversationId,
+        deletedAt: null,
+        messageType: { not: MessageContextType.INTERNAL_NOTE },
+      },
+      orderBy: { createdAt: 'asc' },
+      take: 50,
+      select: {
+        channelId: true,
+        createdAt: true,
+        content: true,
+        messageType: true,
+        author: { select: { displayName: true } },
+        parent: { select: { author: { select: { displayName: true } } } },
+        mentions: { select: { user: { select: { displayName: true } } } },
+        conversation: {
+          select: {
+            id: true,
+            subject: true,
+            customer: {
+              select: {
+                name: true,
+                email: true,
+                company: true,
+                planTier: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (messages.length === 0) {
+      throw new BadRequestException('Conversation has no messages yet');
+    }
+
+    const channelId = messages[messages.length - 1]?.channelId;
+    if (!channelId) {
+      throw new BadRequestException('Conversation is missing a backing channel');
+    }
+
+    await this.assertCanAccessChannel(channelId, actor.sub);
+
+    const conversation = messages[messages.length - 1]?.conversation;
+    const lastCustomerMessage =
+      [...messages]
+        .reverse()
+        .find(
+          (message) =>
+            message.messageType === MessageContextType.CUSTOMER &&
+            message.content?.trim(),
+        ) ??
+      [...messages].reverse().find((message) => message.content?.trim());
+
+    const customerContext = [
+      conversation?.customer?.name ?? conversation?.customer?.email ?? null,
+      conversation?.customer?.company ?? null,
+      conversation?.customer?.planTier ?? null,
+    ]
+      .filter(Boolean)
+      .join(' | ');
+
+    const prompt = [
+      'Draft the next support reply to send to the customer.',
+      'Respond with only the draft message body.',
+      conversation?.subject ? `Conversation subject: ${conversation.subject}` : '',
+      customerContext ? `Customer context: ${customerContext}` : '',
+      lastCustomerMessage?.content
+        ? `Latest customer message: ${lastCustomerMessage.content}`
+        : '',
+      instructions?.trim() ? `Agent instructions: ${instructions.trim()}` : '',
+    ]
+      .filter(Boolean)
+      .join('\n');
+
+    const history = messages.map((message) => formatHistoryLine(message as any)).join('\n');
+    const result = await this.generateReply({
+      scope: { channelId, conversationId },
+      authorId: actor.sub,
+      content: prompt,
+      history,
+      lastRead: null,
+    });
+
+    return {
+      conversationId,
+      draft: result?.reply ?? '',
+      generatedAt: new Date().toISOString(),
+    };
   }
 
   async generateReply(

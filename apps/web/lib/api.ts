@@ -398,3 +398,21 @@ export async function transitionConversation(
   );
   return data as SupportConversation;
 }
+
+export async function generateConversationDraft(
+  conversationId: string,
+  instructions?: string,
+) {
+  const { data } = await api.post(
+    `/conversations/${conversationId}/assistant/draft`,
+    {
+      instructions: instructions?.trim() || undefined,
+    },
+  );
+
+  return data as {
+    conversationId: string;
+    draft: string;
+    generatedAt: string;
+  };
+}

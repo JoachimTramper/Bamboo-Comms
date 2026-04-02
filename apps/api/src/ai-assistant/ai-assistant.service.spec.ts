@@ -1,3 +1,4 @@
+import { MessageContextType } from '@prisma/client';
 import { AiAssistantService } from './ai-assistant.service';
 
 describe('AiAssistantService', () => {
@@ -91,6 +92,63 @@ describe('AiAssistantService', () => {
         }),
       ]),
       expect.any(Object),
+      expect.any(Function),
+    );
+  });
+
+  it('generates a support draft for agent users from conversation context', async () => {
+    prisma.message.findMany.mockResolvedValue([
+      {
+        channelId: 'chan-1',
+        createdAt: new Date('2026-04-02T10:00:00.000Z'),
+        content: 'My invoice total looks wrong.',
+        messageType: MessageContextType.CUSTOMER,
+        author: { displayName: 'Customer' },
+        parent: null,
+        mentions: [],
+        conversation: {
+          id: 'conv-1',
+          subject: 'Invoice issue',
+          customer: {
+            name: 'Taylor',
+            email: 'taylor@example.com',
+            company: 'Northwind',
+            planTier: 'Pro',
+          },
+        },
+      },
+    ]);
+    (prisma as any).channel = {
+      findUnique: jest.fn().mockResolvedValue({
+        id: 'chan-1',
+        name: 'support',
+        isDirect: false,
+        members: [],
+      }),
+    };
+
+    const result = await service.generateSupportDraft(
+      'conv-1',
+      { sub: 'agent-1', email: 'agent@example.com', subjectType: 'user' },
+      'Keep it brief.',
+    );
+
+    expect(result).toEqual({
+      conversationId: 'conv-1',
+      draft: 'assistant reply',
+      generatedAt: expect.any(String),
+    });
+    expect(aiChat.chat).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({
+          role: 'user',
+          content: expect.stringContaining('Latest customer message: My invoice total looks wrong.'),
+        }),
+      ]),
+      expect.objectContaining({
+        channelId: 'chan-1',
+        conversationId: 'conv-1',
+      }),
       expect.any(Function),
     );
   });
