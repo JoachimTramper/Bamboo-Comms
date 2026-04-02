@@ -6,6 +6,7 @@ import {
 import {
   ConversationPriority,
   ConversationStatus,
+  Role,
   type Prisma,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -13,6 +14,7 @@ import { CreateConversationDto } from './dto/create-conversation.dto';
 import { UpdateConversationDto } from './dto/update-conversation.dto';
 import { ListConversationsDto } from './dto/list-conversations.dto';
 import { ConversationLifecycleAction } from './dto/transition-conversation.dto';
+import { ConversationsRealtime } from './conversations.realtime';
 
 const CONVERSATION_INCLUDE = {
   customer: true,
@@ -52,9 +54,28 @@ type ConversationWithPreview = Prisma.ConversationGetPayload<{
   include: typeof CONVERSATION_INCLUDE;
 }>;
 
+const ALLOWED_FORWARD_STATUS_TRANSITIONS: Record<
+  ConversationStatus,
+  ConversationStatus[]
+> = {
+  [ConversationStatus.OPEN]: [ConversationStatus.OPEN, ConversationStatus.PENDING],
+  [ConversationStatus.PENDING]: [
+    ConversationStatus.PENDING,
+    ConversationStatus.RESOLVED,
+  ],
+  [ConversationStatus.RESOLVED]: [
+    ConversationStatus.RESOLVED,
+    ConversationStatus.CLOSED,
+  ],
+  [ConversationStatus.CLOSED]: [ConversationStatus.CLOSED],
+};
+
 @Injectable()
 export class ConversationsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private realtime: ConversationsRealtime,
+  ) {}
 
   private serializeConversation(conversation: ConversationWithPreview) {
     const { messages, _count, ...rest } = conversation;
@@ -94,6 +115,99 @@ export class ConversationsService {
         'Conversation payload must include at least one field',
       );
     }
+  }
+
+  private assertStatusTransition(
+    currentStatus: ConversationStatus,
+    nextStatus: ConversationStatus,
+  ) {
+    const allowed = ALLOWED_FORWARD_STATUS_TRANSITIONS[currentStatus] ?? [
+      currentStatus,
+    ];
+
+    if (allowed.includes(nextStatus)) return;
+
+    throw new BadRequestException(
+      `Invalid status transition from ${currentStatus} to ${nextStatus}`,
+    );
+  }
+
+  private resolveLifecycleTargetStatus(
+    currentStatus: ConversationStatus,
+    action: ConversationLifecycleAction,
+  ) {
+    switch (action) {
+      case ConversationLifecycleAction.PENDING:
+        this.assertStatusTransition(currentStatus, ConversationStatus.PENDING);
+        return ConversationStatus.PENDING;
+      case ConversationLifecycleAction.RESOLVE:
+        this.assertStatusTransition(currentStatus, ConversationStatus.RESOLVED);
+        return ConversationStatus.RESOLVED;
+      case ConversationLifecycleAction.CLOSE:
+        this.assertStatusTransition(currentStatus, ConversationStatus.CLOSED);
+        return ConversationStatus.CLOSED;
+      case ConversationLifecycleAction.OPEN:
+      case ConversationLifecycleAction.REOPEN:
+        if (
+          currentStatus !== ConversationStatus.OPEN &&
+          currentStatus !== ConversationStatus.PENDING &&
+          currentStatus !== ConversationStatus.RESOLVED &&
+          currentStatus !== ConversationStatus.CLOSED
+        ) {
+          throw new BadRequestException(
+            `Cannot reopen conversation from ${currentStatus}`,
+          );
+        }
+        return ConversationStatus.OPEN;
+      default:
+        throw new BadRequestException(
+          'Unsupported conversation lifecycle action',
+        );
+    }
+  }
+
+  private async persistConversationStatusChange(params: {
+    id: string;
+    previousStatus: ConversationStatus;
+    nextStatus: ConversationStatus;
+  }) {
+    if (params.previousStatus === params.nextStatus) {
+      return this.getConversationById(params.id);
+    }
+
+    const conversation = await this.prisma.conversation.update({
+      where: { id: params.id },
+      data: {
+        status: params.nextStatus,
+        resolvedAt:
+          params.nextStatus === ConversationStatus.RESOLVED ? new Date() : null,
+      },
+      include: CONVERSATION_INCLUDE,
+    });
+
+    const serialized = this.serializeConversation(conversation);
+    this.realtime.emitConversationStatusUpdated({
+      ...serialized,
+      previousStatus: params.previousStatus,
+    });
+
+    return serialized;
+  }
+
+  private async maybeApplyUrgentAssignmentHook(params: {
+    priority?: ConversationPriority;
+    assigneeId?: string | null;
+  }) {
+    if (
+      params.priority !== ConversationPriority.URGENT ||
+      params.assigneeId !== undefined
+    ) {
+      return undefined;
+    }
+
+    // Safe placeholder for future escalation routing. No automatic reassignment
+    // happens until an explicit agent-tier model exists.
+    return undefined;
   }
 
   async listConversations(filters: ListConversationsDto) {
@@ -175,6 +289,10 @@ export class ConversationsService {
   async createConversation(dto: CreateConversationDto) {
     this.assertCreateConversationInput(dto);
     await this.ensureReferences(dto.customerId, dto.assigneeId);
+    const urgentAssignment = await this.maybeApplyUrgentAssignmentHook({
+      priority: dto.priority,
+      assigneeId: dto.assigneeId,
+    });
 
     const conversation = await this.prisma.conversation.create({
       data: {
@@ -182,7 +300,7 @@ export class ConversationsService {
         status: dto.status ?? ConversationStatus.OPEN,
         priority: dto.priority ?? ConversationPriority.NORMAL,
         customerId: dto.customerId ?? null,
-        assigneeId: dto.assigneeId ?? null,
+        assigneeId: urgentAssignment ?? dto.assigneeId ?? null,
         tags: this.normalizeTags(dto.tags),
       },
       include: CONVERSATION_INCLUDE,
@@ -192,8 +310,18 @@ export class ConversationsService {
   }
 
   async updateConversation(id: string, dto: UpdateConversationDto) {
-    await this.getConversationById(id);
+    const existing = await this.getConversationById(id);
     await this.ensureReferences(dto.customerId, dto.assigneeId);
+
+    const nextStatus = dto.status ?? existing.status;
+    if (dto.status !== undefined) {
+      this.assertStatusTransition(existing.status, nextStatus);
+    }
+
+    const urgentAssignment = await this.maybeApplyUrgentAssignmentHook({
+      priority: dto.priority ?? existing.priority,
+      assigneeId: dto.assigneeId,
+    });
 
     const conversation = await this.prisma.conversation.update({
       where: { id },
@@ -205,7 +333,11 @@ export class ConversationsService {
         customerId:
           dto.customerId === undefined ? undefined : dto.customerId || null,
         assigneeId:
-          dto.assigneeId === undefined ? undefined : dto.assigneeId || null,
+          dto.assigneeId === undefined
+            ? urgentAssignment === undefined
+              ? undefined
+              : urgentAssignment
+            : dto.assigneeId || null,
         tags: dto.tags === undefined ? undefined : this.normalizeTags(dto.tags),
         resolvedAt:
           dto.status === undefined
@@ -217,27 +349,49 @@ export class ConversationsService {
       include: CONVERSATION_INCLUDE,
     });
 
-    return this.serializeConversation(conversation);
+    const serialized = this.serializeConversation(conversation);
+    let emittedRealtime = false;
+
+    if (dto.status !== undefined && dto.status !== existing.status) {
+      this.realtime.emitConversationStatusUpdated({
+        ...serialized,
+        previousStatus: existing.status,
+      });
+      emittedRealtime = true;
+    }
+
+    if (
+      dto.assigneeId !== undefined &&
+      (dto.assigneeId || null) !== (existing.assigneeId ?? null)
+    ) {
+      this.realtime.emitConversationAssigned(serialized);
+      emittedRealtime = true;
+    }
+
+    if (!emittedRealtime) {
+      this.realtime.emitConversationUpdated(serialized);
+    }
+
+    return serialized;
   }
 
   async updateConversationStatus(id: string, status: ConversationStatus) {
-    await this.getConversationById(id);
-
-    const conversation = await this.prisma.conversation.update({
-      where: { id },
-      data: {
-        status,
-        resolvedAt: status === ConversationStatus.RESOLVED ? new Date() : null,
-      },
-      include: CONVERSATION_INCLUDE,
+    const existing = await this.getConversationById(id);
+    this.assertStatusTransition(existing.status, status);
+    return this.persistConversationStatusChange({
+      id,
+      previousStatus: existing.status,
+      nextStatus: status,
     });
-
-    return this.serializeConversation(conversation);
   }
 
   async assignConversation(id: string, assigneeId?: string) {
-    await this.getConversationById(id);
+    const existing = await this.getConversationById(id);
     await this.ensureReferences(undefined, assigneeId);
+
+    if ((existing.assigneeId ?? null) === (assigneeId || null)) {
+      return existing;
+    }
 
     const conversation = await this.prisma.conversation.update({
       where: { id },
@@ -245,28 +399,28 @@ export class ConversationsService {
       include: CONVERSATION_INCLUDE,
     });
 
-    return this.serializeConversation(conversation);
+    const serialized = this.serializeConversation(conversation);
+
+    this.realtime.emitConversationAssigned(serialized);
+
+    return serialized;
   }
 
   async transitionConversation(
     id: string,
     action: ConversationLifecycleAction,
   ) {
-    switch (action) {
-      case ConversationLifecycleAction.OPEN:
-      case ConversationLifecycleAction.REOPEN:
-        return this.updateConversationStatus(id, ConversationStatus.OPEN);
-      case ConversationLifecycleAction.PENDING:
-        return this.updateConversationStatus(id, ConversationStatus.PENDING);
-      case ConversationLifecycleAction.RESOLVE:
-        return this.updateConversationStatus(id, ConversationStatus.RESOLVED);
-      case ConversationLifecycleAction.CLOSE:
-        return this.updateConversationStatus(id, ConversationStatus.CLOSED);
-      default:
-        throw new BadRequestException(
-          'Unsupported conversation lifecycle action',
-        );
-    }
+    const existing = await this.getConversationById(id);
+    const targetStatus = this.resolveLifecycleTargetStatus(
+      existing.status,
+      action,
+    );
+
+    return this.persistConversationStatusChange({
+      id,
+      previousStatus: existing.status,
+      nextStatus: targetStatus,
+    });
   }
 
   async deleteConversation(id: string) {
@@ -324,11 +478,15 @@ export class ConversationsService {
     if (assigneeId) {
       const assignee = await this.prisma.user.findUnique({
         where: { id: assigneeId },
-        select: { id: true },
+        select: { id: true, role: true },
       });
 
       if (!assignee) {
         throw new BadRequestException('Assignee not found');
+      }
+
+      if (assignee.role !== Role.ADMIN) {
+        throw new BadRequestException('Assignee must be an agent user');
       }
     }
   }
