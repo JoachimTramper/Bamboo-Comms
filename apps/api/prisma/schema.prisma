@@ -152,6 +152,7 @@ model Conversation {
   tags         String[]             @default([])
   isEscalated  Boolean              @default(false)
   escalationReason String?
+  escalationTarget String?
   createdAt    DateTime             @default(now())
   updatedAt    DateTime             @updatedAt
   lastMessageAt DateTime?

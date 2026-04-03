@@ -80,6 +80,8 @@ const ALLOWED_FORWARD_STATUS_TRANSITIONS: Record<
   [ConversationStatus.CLOSED]: [ConversationStatus.CLOSED],
 };
 
+const DEFAULT_ESCALATION_TARGET = 'SUPERVISOR_REVIEW';
+
 @Injectable()
 export class ConversationsService {
   constructor(
@@ -220,6 +222,52 @@ export class ConversationsService {
     return undefined;
   }
 
+  private resolveEscalationState(params: {
+    existing: {
+      isEscalated: boolean;
+      escalationReason?: string | null;
+      escalationTarget?: string | null;
+      escalatedAt?: Date | string | null;
+      escalatedById?: string | null;
+      priority: ConversationPriority;
+    };
+    priority?: ConversationPriority;
+    isEscalated?: boolean;
+    escalationReason?: string | null;
+    actorId?: string | null;
+  }) {
+    const nextPriority = params.priority ?? params.existing.priority;
+    const autoEscalated = nextPriority === ConversationPriority.URGENT;
+    const nextEscalationState = autoEscalated
+      ? true
+      : (params.isEscalated ?? params.existing.isEscalated);
+    const nextEscalationReason =
+      params.escalationReason === undefined
+        ? params.existing.escalationReason ?? null
+        : typeof params.escalationReason === 'string'
+          ? params.escalationReason.trim() || null
+          : null;
+
+    return {
+      nextEscalationState,
+      nextEscalationReason,
+      nextEscalationTarget: nextEscalationState
+        ? DEFAULT_ESCALATION_TARGET
+        : null,
+      nextEscalatedAt: nextEscalationState
+        ? params.existing.isEscalated
+          ? params.existing.escalatedAt ?? null
+          : new Date()
+        : null,
+      nextEscalatedById: nextEscalationState
+        ? params.existing.isEscalated
+          ? params.existing.escalatedById ?? null
+          : params.actorId ?? null
+        : null,
+      autoEscalated,
+    };
+  }
+
   private async assertAgentActor(user?: AuthPrincipal) {
     if (!user || user.subjectType !== 'user') {
       throw new ForbiddenException('Escalation requires an agent actor');
@@ -320,6 +368,17 @@ export class ConversationsService {
       priority: dto.priority,
       assigneeId: dto.assigneeId,
     });
+    const escalationState = this.resolveEscalationState({
+      existing: {
+        isEscalated: false,
+        escalationReason: null,
+        escalationTarget: null,
+        escalatedAt: null,
+        escalatedById: null,
+        priority: dto.priority ?? ConversationPriority.NORMAL,
+      },
+      priority: dto.priority,
+    });
 
     const conversation = await this.prisma.conversation.create({
       data: {
@@ -329,11 +388,23 @@ export class ConversationsService {
         customerId: dto.customerId ?? null,
         assigneeId: urgentAssignment ?? dto.assigneeId ?? null,
         tags: this.normalizeTags(dto.tags),
+        isEscalated: escalationState.nextEscalationState,
+        escalationTarget: escalationState.nextEscalationTarget,
+        escalatedAt: escalationState.nextEscalatedAt,
       },
       include: CONVERSATION_INCLUDE,
     });
 
-    return this.serializeConversation(conversation);
+    const serialized = this.serializeConversation(conversation);
+
+    if (serialized.isEscalated) {
+      console.log(
+        `[support-escalation] conversation=${serialized.id} target=${serialized.escalationTarget ?? DEFAULT_ESCALATION_TARGET} source=create`,
+      );
+      this.realtime.emitConversationEscalated(serialized);
+    }
+
+    return serialized;
   }
 
   async updateConversation(
@@ -358,13 +429,13 @@ export class ConversationsService {
     const escalationActor = isEscalationUpdate
       ? await this.assertAgentActor(actor)
       : null;
-    const nextEscalationState = dto.isEscalated ?? existing.isEscalated;
-    const nextEscalationReason =
-      dto.escalationReason === undefined
-        ? existing.escalationReason
-        : typeof dto.escalationReason === 'string'
-          ? dto.escalationReason.trim() || null
-          : null;
+    const escalationState = this.resolveEscalationState({
+      existing,
+      priority: dto.priority,
+      isEscalated: dto.isEscalated,
+      escalationReason: dto.escalationReason,
+      actorId: escalationActor?.id ?? null,
+    });
 
     const conversation = await this.prisma.conversation.update({
       where: { id },
@@ -382,26 +453,28 @@ export class ConversationsService {
               : urgentAssignment
             : dto.assigneeId || null,
         tags: dto.tags === undefined ? undefined : this.normalizeTags(dto.tags),
-        isEscalated: dto.isEscalated,
-        escalationReason: isEscalationUpdate
-          ? nextEscalationState
-            ? nextEscalationReason
-            : null
-          : undefined,
-        escalatedAt: isEscalationUpdate
-          ? nextEscalationState
-            ? existing.isEscalated
-              ? existing.escalatedAt
-              : new Date()
-            : null
-          : undefined,
-        escalatedById: isEscalationUpdate
-          ? nextEscalationState
-            ? existing.isEscalated
-              ? existing.escalatedById
-              : escalationActor?.id
-            : null
-          : undefined,
+        isEscalated:
+          isEscalationUpdate || dto.priority === ConversationPriority.URGENT
+            ? escalationState.nextEscalationState
+            : dto.isEscalated,
+        escalationReason:
+          isEscalationUpdate || dto.priority === ConversationPriority.URGENT
+            ? escalationState.nextEscalationState
+              ? escalationState.nextEscalationReason
+              : null
+            : undefined,
+        escalationTarget:
+          isEscalationUpdate || dto.priority === ConversationPriority.URGENT
+            ? escalationState.nextEscalationTarget
+            : undefined,
+        escalatedAt:
+          isEscalationUpdate || dto.priority === ConversationPriority.URGENT
+            ? escalationState.nextEscalatedAt
+            : undefined,
+        escalatedById:
+          isEscalationUpdate || dto.priority === ConversationPriority.URGENT
+            ? escalationState.nextEscalatedById
+            : undefined,
         resolvedAt:
           dto.status === undefined
             ? undefined
@@ -428,6 +501,14 @@ export class ConversationsService {
       (dto.assigneeId || null) !== (existing.assigneeId ?? null)
     ) {
       this.realtime.emitConversationAssigned(serialized);
+      emittedRealtime = true;
+    }
+
+    if (!existing.isEscalated && serialized.isEscalated) {
+      console.log(
+        `[support-escalation] conversation=${serialized.id} target=${serialized.escalationTarget ?? DEFAULT_ESCALATION_TARGET} source=${escalationState.autoEscalated ? 'priority-urgent' : 'manual'}`,
+      );
+      this.realtime.emitConversationEscalated(serialized);
       emittedRealtime = true;
     }
 

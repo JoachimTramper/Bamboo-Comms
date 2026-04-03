@@ -57,6 +57,11 @@ export function SupportConversationHeader({ conversation }: Props) {
                 : "This conversation has been marked for human handoff."}
             </div>
           )}
+          {conversation.isEscalated && conversation.escalationTarget && (
+            <div className="mt-2 text-xs font-medium uppercase tracking-[0.12em] text-rose-700">
+              Route: {conversation.escalationTarget.replaceAll("_", " ")}
+            </div>
+          )}
         </div>
 
         <div className="flex flex-wrap items-center gap-2 text-xs">

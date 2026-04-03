@@ -117,6 +117,7 @@ export type SupportConversation = {
   tags: string[];
   isEscalated: boolean;
   escalationReason?: string | null;
+  escalationTarget?: string | null;
   createdAt: string;
   updatedAt: string;
   lastMessageAt: string | null;

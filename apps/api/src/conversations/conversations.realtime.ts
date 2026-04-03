@@ -34,4 +34,15 @@ export class ConversationsRealtime {
       .emit('conversation.status.updated', payload);
     this.emitConversationUpdated(payload);
   }
+
+  emitConversationEscalated(
+    payload: ConversationEventPayload & {
+      isEscalated: boolean;
+      escalationTarget?: string | null;
+      escalationReason?: string | null;
+    } & Record<string, unknown>,
+  ) {
+    this.ws.server.to(`conv:${payload.id}`).emit('conversation.escalated', payload);
+    this.emitConversationUpdated(payload);
+  }
 }

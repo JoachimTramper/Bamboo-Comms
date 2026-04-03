@@ -19,6 +19,7 @@ describe('ConversationsService', () => {
     tags: [],
     isEscalated: false,
     escalationReason: null,
+    escalationTarget: null,
     createdAt: new Date('2026-04-02T10:00:00.000Z'),
     updatedAt: new Date('2026-04-02T10:05:00.000Z'),
     lastMessageAt: null,
@@ -55,6 +56,7 @@ describe('ConversationsService', () => {
       emitConversationUpdated: jest.fn(),
       emitConversationAssigned: jest.fn(),
       emitConversationStatusUpdated: jest.fn(),
+      emitConversationEscalated: jest.fn(),
     };
 
     service = new ConversationsService(prisma, realtime);
@@ -207,6 +209,7 @@ describe('ConversationsService', () => {
       ...conversationRecord,
       isEscalated: true,
       escalationReason: 'Needs supervisor review',
+      escalationTarget: 'SUPERVISOR_REVIEW',
       escalatedAt: new Date('2026-04-03T10:00:00.000Z'),
       escalatedById: 'agent-1',
       escalatedBy: {
@@ -260,6 +263,7 @@ describe('ConversationsService', () => {
       ...conversationRecord,
       isEscalated: false,
       escalationReason: null,
+      escalationTarget: null,
       escalatedAt: null,
       escalatedById: null,
       escalatedBy: null,
@@ -291,5 +295,44 @@ describe('ConversationsService', () => {
     );
     expect(result.isEscalated).toBe(false);
     expect(result.escalationReason).toBeNull();
+  });
+
+  it('auto-escalates when priority becomes urgent', async () => {
+    prisma.conversation.findUnique.mockResolvedValue({
+      ...conversationRecord,
+      priority: ConversationPriority.NORMAL,
+      isEscalated: false,
+    });
+    prisma.conversation.update.mockResolvedValue({
+      ...conversationRecord,
+      priority: ConversationPriority.URGENT,
+      isEscalated: true,
+      escalationTarget: 'SUPERVISOR_REVIEW',
+      escalatedAt: new Date('2026-04-03T11:00:00.000Z'),
+      escalatedById: null,
+      escalatedBy: null,
+    });
+
+    const result = await service.updateConversation('conv-1', {
+      priority: ConversationPriority.URGENT,
+    });
+
+    expect(prisma.conversation.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          priority: ConversationPriority.URGENT,
+          isEscalated: true,
+          escalationTarget: 'SUPERVISOR_REVIEW',
+        }),
+      }),
+    );
+    expect(realtime.emitConversationEscalated).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'conv-1',
+        isEscalated: true,
+        escalationTarget: 'SUPERVISOR_REVIEW',
+      }),
+    );
+    expect(result.isEscalated).toBe(true);
   });
 });

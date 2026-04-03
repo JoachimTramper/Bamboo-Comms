@@ -261,6 +261,8 @@ export function ConversationControls({
                   <div className="text-xs text-neutral-500">
                     Escalated{conversation.escalatedBy?.displayName
                       ? ` by ${conversation.escalatedBy.displayName}`
+                      : ""}{conversation.escalationTarget
+                      ? ` to ${conversation.escalationTarget.replaceAll("_", " ")}`
                       : ""}.
                   </div>
                 )}

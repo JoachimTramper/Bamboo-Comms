@@ -120,11 +120,13 @@ export function useConversations(enabled: boolean) {
     socket.on("conversation.updated", onConversationUpdate);
     socket.on("conversation.assigned", onConversationUpdate);
     socket.on("conversation.status.updated", onConversationUpdate);
+    socket.on("conversation.escalated", onConversationUpdate);
 
     return () => {
       socket?.off("conversation.updated", onConversationUpdate);
       socket?.off("conversation.assigned", onConversationUpdate);
       socket?.off("conversation.status.updated", onConversationUpdate);
+      socket?.off("conversation.escalated", onConversationUpdate);
     };
   }, [enabled]);
 
