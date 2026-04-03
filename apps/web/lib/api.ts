@@ -1,7 +1,12 @@
 // apps/web/lib/api.ts
 import axios from "axios";
 import { refreshSocketAuth } from "@/lib/socket";
-import type { Message, SupportConversation } from "@/app/chat/types";
+import type {
+  ConversationPriority,
+  ConversationStatus,
+  Message,
+  SupportConversation,
+} from "@/app/chat/types";
 
 const api = axios.create({
   baseURL: process.env.NEXT_PUBLIC_API_BASE || "http://localhost:3000",
@@ -383,6 +388,19 @@ export async function assignConversation(
   const { data } = await api.patch(`/conversations/${conversationId}/assign`, {
     assigneeId: assigneeId ?? undefined,
   });
+  return data as SupportConversation;
+}
+
+export async function updateConversation(
+  conversationId: string,
+  updates: {
+    status?: ConversationStatus;
+    priority?: ConversationPriority;
+    assigneeId?: string | null;
+    tags?: string[];
+  },
+) {
+  const { data } = await api.patch(`/conversations/${conversationId}`, updates);
   return data as SupportConversation;
 }
 

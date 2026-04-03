@@ -13,6 +13,7 @@ import {
   assignConversation,
   generateConversationDraft,
   transitionConversation,
+  updateConversation,
   logout,
   updateAvatar,
   uploadAvatarFile,
@@ -42,6 +43,7 @@ import { ChatTitleBubble } from "./components/ChatTitleBubble";
 import { SupportConversationHeader } from "./components/SupportConversationHeader";
 import { SupportConversationMeta } from "./components/SupportConversationMeta";
 import { SupportAssistantPanel } from "./components/SupportAssistantPanel";
+import { ConversationControls } from "./components/ConversationControls";
 
 import { useMessages } from "./hooks/useMessages";
 import { useTyping } from "./hooks/useTyping";
@@ -130,6 +132,8 @@ export default function ChatPage() {
   >(null);
   const [updatingStatus, setUpdatingStatus] = useState(false);
   const [updatingAssignment, setUpdatingAssignment] = useState(false);
+  const [updatingPriority, setUpdatingPriority] = useState(false);
+  const [updatingTags, setUpdatingTags] = useState(false);
   const [assistantInstructions, setAssistantInstructions] = useState("");
   const [assistantDraft, setAssistantDraft] = useState("");
   const [assistantDraftAt, setAssistantDraftAt] = useState<string | null>(null);
@@ -330,6 +334,46 @@ export default function ChatPage() {
       );
     } finally {
       setAssistantLoading(false);
+    }
+  }
+
+  async function handleUpdateConversationPriority(
+    priority: Exclude<(typeof activeConversation), null>["priority"],
+  ) {
+    if (!activeConversationId) return;
+
+    try {
+      setConversationActionError(null);
+      setUpdatingPriority(true);
+      const updated = await updateConversation(activeConversationId, { priority });
+      syncConversationState(updated);
+    } catch (e: any) {
+      setConversationActionError(
+        e?.response?.data?.message ??
+          e?.message ??
+          "Failed to update conversation priority",
+      );
+    } finally {
+      setUpdatingPriority(false);
+    }
+  }
+
+  async function handleUpdateConversationTags(tags: string[]) {
+    if (!activeConversationId) return;
+
+    try {
+      setConversationActionError(null);
+      setUpdatingTags(true);
+      const updated = await updateConversation(activeConversationId, { tags });
+      syncConversationState(updated);
+    } catch (e: any) {
+      setConversationActionError(
+        e?.response?.data?.message ??
+          e?.message ??
+          "Failed to update conversation tags",
+      );
+    } finally {
+      setUpdatingTags(false);
     }
   }
 
@@ -621,15 +665,22 @@ export default function ChatPage() {
               )}
 
               {activeView === "support" && activeConversation && (
-                <SupportConversationMeta
+                <SupportConversationMeta conversation={activeConversation} />
+              )}
+
+              {activeView === "support" && activeConversation && (
+                <ConversationControls
                   conversation={activeConversation}
-                  meId={user.sub}
+                  me={{ id: user.sub, displayName: user.displayName }}
                   canManage={user.role === "ADMIN"}
                   updatingStatus={updatingStatus}
                   updatingAssignment={updatingAssignment}
+                  updatingPriority={updatingPriority}
+                  updatingTags={updatingTags}
                   onTransition={handleTransitionConversation}
-                  onAssignToMe={() => handleAssignConversation(user.sub)}
-                  onUnassign={() => handleAssignConversation(null)}
+                  onAssign={handleAssignConversation}
+                  onPriorityChange={handleUpdateConversationPriority}
+                  onTagsChange={handleUpdateConversationTags}
                 />
               )}
 

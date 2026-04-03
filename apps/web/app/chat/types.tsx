@@ -100,6 +100,7 @@ export type SupportConversation = {
   subject: string | null;
   status: ConversationStatus;
   priority: ConversationPriority;
+  tags: string[];
   createdAt: string;
   updatedAt: string;
   lastMessageAt: string | null;
