@@ -11,6 +11,8 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { User } from '../auth/decorators/user.decorator';
+import type { AuthPrincipal } from '../auth/auth.types';
 import { ConversationsService } from './conversations.service';
 import { CreateConversationDto } from './dto/create-conversation.dto';
 import { UpdateConversationDto } from './dto/update-conversation.dto';
@@ -40,8 +42,12 @@ export class ConversationsController {
   }
 
   @Patch(':id')
-  update(@Param('id') id: string, @Body() dto: UpdateConversationDto) {
-    return this.conversations.updateConversation(id, dto);
+  update(
+    @Param('id') id: string,
+    @Body() dto: UpdateConversationDto,
+    @User() user: AuthPrincipal,
+  ) {
+    return this.conversations.updateConversation(id, dto, user);
   }
 
   @Patch(':id/status')

@@ -134,6 +134,7 @@ export default function ChatPage() {
   const [updatingAssignment, setUpdatingAssignment] = useState(false);
   const [updatingPriority, setUpdatingPriority] = useState(false);
   const [updatingTags, setUpdatingTags] = useState(false);
+  const [updatingEscalation, setUpdatingEscalation] = useState(false);
   const [assistantInstructions, setAssistantInstructions] = useState("");
   const [assistantDraft, setAssistantDraft] = useState("");
   const [assistantDraftAt, setAssistantDraftAt] = useState<string | null>(null);
@@ -374,6 +375,31 @@ export default function ChatPage() {
       );
     } finally {
       setUpdatingTags(false);
+    }
+  }
+
+  async function handleUpdateConversationEscalation(next: {
+    isEscalated: boolean;
+    escalationReason?: string | null;
+  }) {
+    if (!activeConversationId) return;
+
+    try {
+      setConversationActionError(null);
+      setUpdatingEscalation(true);
+      const updated = await updateConversation(activeConversationId, {
+        isEscalated: next.isEscalated,
+        escalationReason: next.escalationReason ?? null,
+      });
+      syncConversationState(updated);
+    } catch (e: any) {
+      setConversationActionError(
+        e?.response?.data?.message ??
+          e?.message ??
+          "Failed to update conversation escalation",
+      );
+    } finally {
+      setUpdatingEscalation(false);
     }
   }
 
@@ -677,10 +703,12 @@ export default function ChatPage() {
                   updatingAssignment={updatingAssignment}
                   updatingPriority={updatingPriority}
                   updatingTags={updatingTags}
+                  updatingEscalation={updatingEscalation}
                   onTransition={handleTransitionConversation}
                   onAssign={handleAssignConversation}
                   onPriorityChange={handleUpdateConversationPriority}
                   onTagsChange={handleUpdateConversationTags}
+                  onEscalationChange={handleUpdateConversationEscalation}
                 />
               )}
 

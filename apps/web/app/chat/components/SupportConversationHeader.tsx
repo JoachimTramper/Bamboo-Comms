@@ -49,6 +49,14 @@ export function SupportConversationHeader({ conversation }: Props) {
               {conversation.customer.company}
             </div>
           )}
+          {conversation.isEscalated && (
+            <div className="mt-2 max-w-2xl rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
+              <span className="font-semibold">Escalated.</span>{" "}
+              {conversation.escalationReason?.trim()
+                ? conversation.escalationReason
+                : "This conversation has been marked for human handoff."}
+            </div>
+          )}
         </div>
 
         <div className="flex flex-wrap items-center gap-2 text-xs">
@@ -69,6 +77,11 @@ export function SupportConversationHeader({ conversation }: Props) {
           <span className="rounded-full border border-neutral-200 bg-neutral-50 px-2.5 py-1 text-neutral-600">
             {conversation.assignee?.displayName ?? "Unassigned"}
           </span>
+          {conversation.isEscalated && (
+            <span className="rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 font-semibold text-rose-700">
+              Escalated
+            </span>
+          )}
           <span className="rounded-full border border-neutral-200 bg-white px-2.5 py-1 text-neutral-500">
             {conversation.messageCount} messages
           </span>

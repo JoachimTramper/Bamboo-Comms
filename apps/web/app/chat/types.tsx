@@ -115,6 +115,8 @@ export type SupportConversation = {
   status: ConversationStatus;
   priority: ConversationPriority;
   tags: string[];
+  isEscalated: boolean;
+  escalationReason?: string | null;
   createdAt: string;
   updatedAt: string;
   lastMessageAt: string | null;
@@ -122,6 +124,7 @@ export type SupportConversation = {
   lastSupportReplyAt: string | null;
   firstResponseAt: string | null;
   resolvedAt: string | null;
+  escalatedAt: string | null;
   primaryChannelId: string | null;
   messageCount: number;
   customerId?: string | null;
@@ -134,6 +137,12 @@ export type SupportConversation = {
     planTier?: string | null;
   } | null;
   assignee?: {
+    id: string;
+    email: string;
+    displayName: string;
+    role: "USER" | "ADMIN";
+  } | null;
+  escalatedBy?: {
     id: string;
     email: string;
     displayName: string;

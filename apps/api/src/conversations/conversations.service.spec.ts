@@ -17,6 +17,8 @@ describe('ConversationsService', () => {
     status: ConversationStatus.OPEN,
     priority: ConversationPriority.NORMAL,
     tags: [],
+    isEscalated: false,
+    escalationReason: null,
     createdAt: new Date('2026-04-02T10:00:00.000Z'),
     updatedAt: new Date('2026-04-02T10:05:00.000Z'),
     lastMessageAt: null,
@@ -24,10 +26,13 @@ describe('ConversationsService', () => {
     lastSupportReplyAt: null,
     firstResponseAt: null,
     resolvedAt: null,
+    escalatedAt: null,
     customerId: null,
     assigneeId: null,
+    escalatedById: null,
     customer: null,
     assignee: null,
+    escalatedBy: null,
     messages: [],
     _count: { messages: 0 },
   };
@@ -187,5 +192,104 @@ describe('ConversationsService', () => {
       }),
     );
     expect(result.status).toBe(ConversationStatus.OPEN);
+  });
+
+  it('stores manual escalation state and reason for agent actors', async () => {
+    prisma.conversation.findUnique.mockResolvedValue({
+      ...conversationRecord,
+      isEscalated: false,
+    });
+    prisma.user.findUnique.mockResolvedValue({
+      id: 'agent-1',
+      role: Role.ADMIN,
+    });
+    prisma.conversation.update.mockResolvedValue({
+      ...conversationRecord,
+      isEscalated: true,
+      escalationReason: 'Needs supervisor review',
+      escalatedAt: new Date('2026-04-03T10:00:00.000Z'),
+      escalatedById: 'agent-1',
+      escalatedBy: {
+        id: 'agent-1',
+        email: 'agent@example.com',
+        displayName: 'Agent',
+        role: Role.ADMIN,
+      },
+    });
+
+    const result = await service.updateConversation(
+      'conv-1',
+      {
+        isEscalated: true,
+        escalationReason: 'Needs supervisor review',
+      },
+      {
+        sub: 'agent-1',
+        email: 'agent@example.com',
+        subjectType: 'user',
+      },
+    );
+
+    expect(prisma.conversation.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'conv-1' },
+        data: expect.objectContaining({
+          isEscalated: true,
+          escalationReason: 'Needs supervisor review',
+          escalatedById: 'agent-1',
+        }),
+      }),
+    );
+    expect(result.isEscalated).toBe(true);
+    expect(result.escalationReason).toBe('Needs supervisor review');
+  });
+
+  it('clears escalation safely when escalationReason is null', async () => {
+    prisma.conversation.findUnique.mockResolvedValue({
+      ...conversationRecord,
+      isEscalated: true,
+      escalationReason: 'Needs supervisor review',
+      escalatedAt: new Date('2026-04-03T10:00:00.000Z'),
+      escalatedById: 'agent-1',
+    });
+    prisma.user.findUnique.mockResolvedValue({
+      id: 'agent-1',
+      role: Role.ADMIN,
+    });
+    prisma.conversation.update.mockResolvedValue({
+      ...conversationRecord,
+      isEscalated: false,
+      escalationReason: null,
+      escalatedAt: null,
+      escalatedById: null,
+      escalatedBy: null,
+    });
+
+    const result = await service.updateConversation(
+      'conv-1',
+      {
+        isEscalated: false,
+        escalationReason: null as any,
+      },
+      {
+        sub: 'agent-1',
+        email: 'agent@example.com',
+        subjectType: 'user',
+      },
+    );
+
+    expect(prisma.conversation.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'conv-1' },
+        data: expect.objectContaining({
+          isEscalated: false,
+          escalationReason: null,
+          escalatedAt: null,
+          escalatedById: null,
+        }),
+      }),
+    );
+    expect(result.isEscalated).toBe(false);
+    expect(result.escalationReason).toBeNull();
   });
 });

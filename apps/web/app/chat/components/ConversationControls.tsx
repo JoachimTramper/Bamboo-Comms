@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect, useState } from "react";
+
 import type {
   ConversationLifecycleAction,
   ConversationPriority,
@@ -20,10 +22,15 @@ type Props = {
   updatingAssignment: boolean;
   updatingPriority: boolean;
   updatingTags: boolean;
+  updatingEscalation: boolean;
   onTransition: (action: ConversationLifecycleAction) => Promise<void> | void;
   onAssign: (assigneeId?: string | null) => Promise<void> | void;
   onPriorityChange: (priority: ConversationPriority) => Promise<void> | void;
   onTagsChange: (tags: string[]) => Promise<void> | void;
+  onEscalationChange: (next: {
+    isEscalated: boolean;
+    escalationReason?: string | null;
+  }) => Promise<void> | void;
 };
 
 function nextActionsForStatus(
@@ -63,11 +70,16 @@ export function ConversationControls({
   updatingAssignment,
   updatingPriority,
   updatingTags,
+  updatingEscalation,
   onTransition,
   onAssign,
   onPriorityChange,
   onTagsChange,
+  onEscalationChange,
 }: Props) {
+  const [escalationReasonDraft, setEscalationReasonDraft] = useState(
+    conversation.escalationReason ?? "",
+  );
   const statusActions = nextActionsForStatus(conversation.status);
   const assignmentOptions = [
     { value: "", label: "Unassigned" },
@@ -83,6 +95,10 @@ export function ConversationControls({
         ]
       : []),
   ];
+
+  useEffect(() => {
+    setEscalationReasonDraft(conversation.escalationReason ?? "");
+  }, [conversation.id, conversation.isEscalated, conversation.escalationReason]);
 
   return (
     <div className="border-b border-neutral-200 bg-white/85 px-4 py-4 backdrop-blur-sm">
@@ -193,6 +209,62 @@ export function ConversationControls({
                 saving={updatingTags}
                 onChange={onTagsChange}
               />
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-neutral-200 bg-stone-50/70 p-4 xl:col-span-2">
+            {sectionLabel(
+              "Escalation",
+              "Manual human handoff flag for cases that need extra review. No automatic routing or notifications yet.",
+            )}
+            <div className="mt-3 space-y-3">
+              <textarea
+                value={escalationReasonDraft}
+                onChange={(event) => setEscalationReasonDraft(event.target.value)}
+                disabled={!canManage || updatingEscalation}
+                rows={3}
+                placeholder="Optional reason for escalation"
+                className="w-full resize-none rounded-xl border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 outline-none transition focus:border-rose-300 focus:ring-2 focus:ring-rose-100 disabled:cursor-not-allowed disabled:bg-neutral-100"
+              />
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() =>
+                    onEscalationChange({
+                      isEscalated: true,
+                      escalationReason: escalationReasonDraft,
+                    })
+                  }
+                  disabled={!canManage || updatingEscalation}
+                  className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700 transition-colors hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {updatingEscalation
+                    ? "Saving..."
+                    : conversation.isEscalated
+                      ? "Update Escalation"
+                      : "Escalate Conversation"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    onEscalationChange({
+                      isEscalated: false,
+                      escalationReason: null,
+                    })
+                  }
+                  disabled={!canManage || updatingEscalation || !conversation.isEscalated}
+                  className="rounded-xl border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Clear Escalation
+                </button>
+                {conversation.isEscalated && (
+                  <div className="text-xs text-neutral-500">
+                    Escalated{conversation.escalatedBy?.displayName
+                      ? ` by ${conversation.escalatedBy.displayName}`
+                      : ""}.
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>

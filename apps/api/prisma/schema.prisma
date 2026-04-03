@@ -54,8 +54,9 @@ model User {
   deletedMessages Message[]     @relation("MessageDeletedBy")
   reactions       MessageReaction[]
   mentions        MessageMention[]
-  assignedConversations Conversation[] @relation("ConversationAssignee")
-  internalNotes   InternalNote[]
+  assignedConversations  Conversation[] @relation("ConversationAssignee")
+  escalatedConversations Conversation[] @relation("ConversationEscalatedBy")
+  internalNotes          InternalNote[]
 }
 
 model Customer {
@@ -149,6 +150,8 @@ model Conversation {
   status       ConversationStatus   @default(OPEN)
   priority     ConversationPriority @default(NORMAL)
   tags         String[]             @default([])
+  isEscalated  Boolean              @default(false)
+  escalationReason String?
   createdAt    DateTime             @default(now())
   updatedAt    DateTime             @updatedAt
   lastMessageAt DateTime?
@@ -156,12 +159,15 @@ model Conversation {
   lastSupportReplyAt DateTime?
   firstResponseAt DateTime?
   resolvedAt   DateTime?
+  escalatedAt  DateTime?
 
   customerId   String?
   assigneeId   String?
+  escalatedById String?
 
   customer     Customer?            @relation(fields: [customerId], references: [id], onDelete: SetNull)
   assignee     User?                @relation("ConversationAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  escalatedBy  User?                @relation("ConversationEscalatedBy", fields: [escalatedById], references: [id], onDelete: SetNull)
   messages     Message[]
   internalNotes InternalNote[]
 
@@ -169,6 +175,7 @@ model Conversation {
   @@index([assigneeId, status])
   @@index([customerId])
   @@index([priority, status])
+  @@index([isEscalated, status])
 }
 
 model InternalNote {

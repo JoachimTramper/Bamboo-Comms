@@ -2,6 +2,7 @@ import {
   ArrayMaxSize,
   ArrayUnique,
   IsArray,
+  IsBoolean,
   IsEnum,
   IsOptional,
   IsString,
@@ -40,4 +41,13 @@ export class UpdateConversationDto {
   @ArrayUnique()
   @ArrayMaxSize(20)
   tags?: string[];
+
+  @IsOptional()
+  @IsBoolean()
+  isEscalated?: boolean;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  escalationReason?: string;
 }

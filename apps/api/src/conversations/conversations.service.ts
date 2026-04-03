@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -15,10 +16,19 @@ import { UpdateConversationDto } from './dto/update-conversation.dto';
 import { ListConversationsDto } from './dto/list-conversations.dto';
 import { ConversationLifecycleAction } from './dto/transition-conversation.dto';
 import { ConversationsRealtime } from './conversations.realtime';
+import type { AuthPrincipal } from '../auth/auth.types';
 
 const CONVERSATION_INCLUDE = {
   customer: true,
   assignee: {
+    select: {
+      id: true,
+      email: true,
+      displayName: true,
+      role: true,
+    },
+  },
+  escalatedBy: {
     select: {
       id: true,
       email: true,
@@ -210,6 +220,23 @@ export class ConversationsService {
     return undefined;
   }
 
+  private async assertAgentActor(user?: AuthPrincipal) {
+    if (!user || user.subjectType !== 'user') {
+      throw new ForbiddenException('Escalation requires an agent actor');
+    }
+
+    const actor = await this.prisma.user.findUnique({
+      where: { id: user.sub },
+      select: { id: true, role: true },
+    });
+
+    if (!actor || actor.role !== Role.ADMIN) {
+      throw new ForbiddenException('Escalation requires an agent actor');
+    }
+
+    return actor;
+  }
+
   async listConversations(filters: ListConversationsDto) {
     const where: Prisma.ConversationWhereInput = {};
 
@@ -309,7 +336,11 @@ export class ConversationsService {
     return this.serializeConversation(conversation);
   }
 
-  async updateConversation(id: string, dto: UpdateConversationDto) {
+  async updateConversation(
+    id: string,
+    dto: UpdateConversationDto,
+    actor?: AuthPrincipal,
+  ) {
     const existing = await this.getConversationById(id);
     await this.ensureReferences(dto.customerId, dto.assigneeId);
 
@@ -322,6 +353,18 @@ export class ConversationsService {
       priority: dto.priority ?? existing.priority,
       assigneeId: dto.assigneeId,
     });
+    const isEscalationUpdate =
+      dto.isEscalated !== undefined || dto.escalationReason !== undefined;
+    const escalationActor = isEscalationUpdate
+      ? await this.assertAgentActor(actor)
+      : null;
+    const nextEscalationState = dto.isEscalated ?? existing.isEscalated;
+    const nextEscalationReason =
+      dto.escalationReason === undefined
+        ? existing.escalationReason
+        : typeof dto.escalationReason === 'string'
+          ? dto.escalationReason.trim() || null
+          : null;
 
     const conversation = await this.prisma.conversation.update({
       where: { id },
@@ -339,6 +382,26 @@ export class ConversationsService {
               : urgentAssignment
             : dto.assigneeId || null,
         tags: dto.tags === undefined ? undefined : this.normalizeTags(dto.tags),
+        isEscalated: dto.isEscalated,
+        escalationReason: isEscalationUpdate
+          ? nextEscalationState
+            ? nextEscalationReason
+            : null
+          : undefined,
+        escalatedAt: isEscalationUpdate
+          ? nextEscalationState
+            ? existing.isEscalated
+              ? existing.escalatedAt
+              : new Date()
+            : null
+          : undefined,
+        escalatedById: isEscalationUpdate
+          ? nextEscalationState
+            ? existing.isEscalated
+              ? existing.escalatedById
+              : escalationActor?.id
+            : null
+          : undefined,
         resolvedAt:
           dto.status === undefined
             ? undefined

@@ -109,6 +109,11 @@ export function SupportInboxList({
                 <span className="truncate text-[11px] text-neutral-500">
                   {conversation.assignee?.displayName ?? "Unassigned"}
                 </span>
+                {conversation.isEscalated && (
+                  <span className="rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[10px] font-semibold text-rose-700">
+                    Escalated
+                  </span>
+                )}
               </div>
             </button>
           );

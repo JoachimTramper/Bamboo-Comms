@@ -399,6 +399,8 @@ export async function updateConversation(
     priority?: ConversationPriority;
     assigneeId?: string | null;
     tags?: string[];
+    isEscalated?: boolean;
+    escalationReason?: string | null;
   },
 ) {
   const { data } = await api.patch(`/conversations/${conversationId}`, updates);
