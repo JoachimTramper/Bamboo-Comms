@@ -16,6 +16,7 @@ import { DigestModule } from './digest/digest.module';
 import { ConversationsModule } from './conversations/conversations.module';
 import { AiAssistantModule } from './ai-assistant/ai-assistant.module';
 import { KnowledgeBaseModule } from './knowledge-base/knowledge-base.module';
+import { InternalNotesModule } from './internal-notes/internal-notes.module';
 
 const repoRoot = process.env.INIT_CWD ?? process.cwd();
 
@@ -35,6 +36,7 @@ const repoRoot = process.env.INIT_CWD ?? process.cwd();
     ChannelsModule,
     MessagesModule,
     ConversationsModule,
+    InternalNotesModule,
     AiAssistantModule,
     KnowledgeBaseModule,
     WsModule,

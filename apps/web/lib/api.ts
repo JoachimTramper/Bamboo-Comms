@@ -4,6 +4,7 @@ import { refreshSocketAuth } from "@/lib/socket";
 import type {
   ConversationPriority,
   ConversationStatus,
+  InternalNote,
   Message,
   SupportConversation,
 } from "@/app/chat/types";
@@ -433,4 +434,29 @@ export async function generateConversationDraft(
     draft: string;
     generatedAt: string;
   };
+}
+
+export async function listInternalNotes(conversationId: string) {
+  const { data } = await api.get(
+    `/conversations/${conversationId}/internal-notes`,
+  );
+  return data as InternalNote[];
+}
+
+export async function createInternalNote(
+  conversationId: string,
+  content: string,
+) {
+  const { data } = await api.post(
+    `/conversations/${conversationId}/internal-notes`,
+    { content },
+  );
+  return data as InternalNote;
+}
+
+export async function deleteInternalNote(
+  conversationId: string,
+  noteId: string,
+) {
+  await api.delete(`/conversations/${conversationId}/internal-notes/${noteId}`);
 }

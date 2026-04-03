@@ -88,6 +88,20 @@ export type ConversationStatus = "OPEN" | "PENDING" | "RESOLVED" | "CLOSED";
 
 export type ConversationPriority = "LOW" | "NORMAL" | "HIGH" | "URGENT";
 
+export type InternalNote = {
+  id: string;
+  conversationId: string;
+  authorId: string;
+  content: string;
+  createdAt: string;
+  updatedAt: string;
+  author: {
+    id: string;
+    displayName: string;
+    avatarUrl: string | null;
+  };
+};
+
 export type ConversationLifecycleAction =
   | "OPEN"
   | "PENDING"

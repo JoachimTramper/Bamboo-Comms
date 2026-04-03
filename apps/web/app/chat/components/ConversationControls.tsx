@@ -198,7 +198,10 @@ export function ConversationControls({
         </div>
 
         <div className="mt-4">
-          <InternalNotes disabled={!canManage} />
+          <InternalNotes
+            conversationId={conversation.id}
+            disabled={!canManage}
+          />
         </div>
       </div>
     </div>
