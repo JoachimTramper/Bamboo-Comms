@@ -372,8 +372,18 @@ export async function listChannelsWithUnread() {
   }>;
 }
 
-export async function listConversations() {
-  const { data } = await api.get("/conversations");
+export async function listConversations(filters?: {
+  status?: ConversationStatus;
+  priority?: ConversationPriority;
+  assigneeId?: string;
+}) {
+  const { data } = await api.get("/conversations", {
+    params: {
+      status: filters?.status,
+      priority: filters?.priority,
+      assigneeId: filters?.assigneeId,
+    },
+  });
   return data as SupportConversation[];
 }
 

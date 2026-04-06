@@ -1,10 +1,15 @@
 "use client";
 
-import type { ChannelWithUnread, OnlineUser } from "../types";
+import type {
+  ChannelWithUnread,
+  ConversationPriority,
+  ConversationStatus,
+  OnlineUser,
+  SupportConversation,
+} from "../types";
 import { MessageCircle } from "lucide-react";
 import { Avatar } from "./Avatar";
 import { SupportInboxList } from "./SupportInboxList";
-import type { SupportConversation } from "../types";
 
 type Props = {
   regularChannels: ChannelWithUnread[];
@@ -24,6 +29,12 @@ type Props = {
   conversations?: SupportConversation[];
   activeConversationId?: string | null;
   onSelectConversation?: (conversationId: string) => void;
+  supportStatusFilter?: ConversationStatus | "ALL";
+  supportPriorityFilter?: ConversationPriority | "ALL";
+  supportAssignedToMeOnly?: boolean;
+  onSupportStatusFilterChange?: (value: ConversationStatus | "ALL") => void;
+  onSupportPriorityFilterChange?: (value: ConversationPriority | "ALL") => void;
+  onSupportAssignedToMeOnlyChange?: (value: boolean) => void;
   conversationsLoading?: boolean;
 };
 
@@ -47,6 +58,12 @@ export function Sidebar({
   conversations = [],
   activeConversationId = null,
   onSelectConversation,
+  supportStatusFilter = "ALL",
+  supportPriorityFilter = "ALL",
+  supportAssignedToMeOnly = false,
+  onSupportStatusFilterChange,
+  onSupportPriorityFilterChange,
+  onSupportAssignedToMeOnlyChange,
   conversationsLoading = false,
 }: Props) {
   // --- Presence helpers ---
@@ -84,6 +101,14 @@ export function Sidebar({
             conversations={conversations}
             activeConversationId={activeConversationId}
             onSelectConversation={onSelectConversation}
+            statusFilter={supportStatusFilter}
+            priorityFilter={supportPriorityFilter}
+            assignedToMeOnly={supportAssignedToMeOnly}
+            onStatusFilterChange={onSupportStatusFilterChange ?? (() => {})}
+            onPriorityFilterChange={onSupportPriorityFilterChange ?? (() => {})}
+            onAssignedToMeOnlyChange={
+              onSupportAssignedToMeOnlyChange ?? (() => {})
+            }
             loading={conversationsLoading}
           />
         )}

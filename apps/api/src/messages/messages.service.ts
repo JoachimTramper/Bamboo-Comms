@@ -11,6 +11,7 @@ import { MessagesBotOrchestrator } from './messages.bot';
 import { MESSAGE_INCLUDE_FULL } from './messages.queries';
 import { AiAssistantService } from '../ai-assistant/ai-assistant.service';
 import type { AuthPrincipal } from '../auth/auth.types';
+import { AI_BOT_NAME } from '../bot/ai-bot.constants';
 import { formatHistoryLine } from '../bot/ai-bot.format';
 
 const MAX_MESSAGE_LEN = 5000;
@@ -608,6 +609,7 @@ export class MessagesService {
     });
 
     const isGeneral = chMeta?.name === 'general' && chMeta?.isDirect === false;
+    const rawBotMentioned = text.includes(`@${AI_BOT_NAME}`);
 
     const botMentionedInSavedMsg = !!(
       botId &&
@@ -631,7 +633,8 @@ export class MessagesService {
         botId,
         isGeneral,
         isCommand,
-        botMentioned: botMentionedInSavedMsg || isBotMentioned,
+        botMentioned:
+          botMentionedInSavedMsg || isBotMentioned || rawBotMentioned,
         lastReadOverride,
         createBotMessage: async (chId, c, convId) =>
           this.createBotMessage(chId, c, undefined, convId),

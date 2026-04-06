@@ -190,6 +190,58 @@ describe('MessagesService', () => {
     expect(bot.maybeRespond).toHaveBeenCalled();
   });
 
+  it('keeps raw @BambooBob text on the legacy bot path even without mention ids', async () => {
+    prisma.channel.findUnique.mockImplementation(({ select }: any) => {
+      if (select?.name) {
+        return Promise.resolve({
+          id: 'general-1',
+          name: 'general',
+          isDirect: false,
+          members: [{ id: 'user-1' }],
+        });
+      }
+
+      return Promise.resolve({
+        id: 'general-1',
+        members: [{ id: 'user-2' }],
+      });
+    });
+
+    prisma.user.findFirst.mockResolvedValue({ id: 'bot-1' });
+    prisma.message.create.mockResolvedValue({
+      id: 'msg-2',
+      channelId: 'general-1',
+      conversationId: null,
+      messageType: MessageContextType.CHAT,
+      responseTimeMs: null,
+      authorId: 'user-1',
+      content: '@BambooBob summarize',
+      createdAt: new Date('2026-04-01T10:05:00.000Z'),
+      author: {
+        id: 'user-1',
+        displayName: 'Agent',
+        avatarUrl: null,
+      },
+      parent: null,
+      reactions: [],
+      mentions: [],
+      attachments: [],
+    });
+
+    await service.create(
+      'general-1',
+      { sub: 'user-1', email: 'agent@example.com', subjectType: 'user' },
+      '@BambooBob summarize',
+    );
+
+    expect(bot.maybeRespond).toHaveBeenCalledWith(
+      expect.objectContaining({
+        isGeneral: true,
+        botMentioned: true,
+      }),
+    );
+  });
+
   it('uses the assistant for conversation customer messages without weakening auth rules', async () => {
     prisma.channel.findUnique.mockImplementation(({ select }: any) => {
       if (select?.name) {

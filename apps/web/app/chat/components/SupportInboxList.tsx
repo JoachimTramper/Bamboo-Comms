@@ -1,11 +1,21 @@
 "use client";
 
-import type { SupportConversation } from "../types";
+import type {
+  ConversationPriority,
+  ConversationStatus,
+  SupportConversation,
+} from "../types";
 
 type Props = {
   conversations: SupportConversation[];
   activeConversationId: string | null;
   onSelectConversation: (conversationId: string) => void;
+  statusFilter: ConversationStatus | "ALL";
+  priorityFilter: ConversationPriority | "ALL";
+  assignedToMeOnly: boolean;
+  onStatusFilterChange: (value: ConversationStatus | "ALL") => void;
+  onPriorityFilterChange: (value: ConversationPriority | "ALL") => void;
+  onAssignedToMeOnlyChange: (value: boolean) => void;
   loading?: boolean;
 };
 
@@ -44,6 +54,12 @@ export function SupportInboxList({
   conversations,
   activeConversationId,
   onSelectConversation,
+  statusFilter,
+  priorityFilter,
+  assignedToMeOnly,
+  onStatusFilterChange,
+  onPriorityFilterChange,
+  onAssignedToMeOnlyChange,
   loading = false,
 }: Props) {
   return (
@@ -55,6 +71,64 @@ export function SupportInboxList({
         <span className="text-[11px] text-neutral-500">
           {loading ? "Loading..." : `${conversations.length} threads`}
         </span>
+      </div>
+
+      <div className="mt-2 rounded-xl border border-stone-200 bg-white/90 p-2">
+        <div className="grid grid-cols-1 gap-2">
+          <label className="text-[11px] font-medium uppercase tracking-wide text-neutral-500">
+            Status
+            <select
+              className="mt-1 w-full rounded-lg border border-neutral-200 bg-white px-2 py-1.5 text-sm text-neutral-800 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500"
+              value={statusFilter}
+              onChange={(event) =>
+                onStatusFilterChange(
+                  event.target.value as ConversationStatus | "ALL",
+                )
+              }
+            >
+              <option value="ALL">All statuses</option>
+              <option value="OPEN">Open</option>
+              <option value="PENDING">Pending</option>
+              <option value="RESOLVED">Resolved</option>
+              <option value="CLOSED">Closed</option>
+            </select>
+          </label>
+
+          <label className="text-[11px] font-medium uppercase tracking-wide text-neutral-500">
+            Priority
+            <select
+              className="mt-1 w-full rounded-lg border border-neutral-200 bg-white px-2 py-1.5 text-sm text-neutral-800 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500"
+              value={priorityFilter}
+              onChange={(event) =>
+                onPriorityFilterChange(
+                  event.target.value as ConversationPriority | "ALL",
+                )
+              }
+            >
+              <option value="ALL">All priorities</option>
+              <option value="LOW">Low</option>
+              <option value="NORMAL">Normal</option>
+              <option value="HIGH">High</option>
+              <option value="URGENT">Urgent</option>
+            </select>
+          </label>
+
+          <label className="flex items-center gap-2 rounded-lg border border-neutral-200 bg-stone-50 px-2 py-2 text-sm text-neutral-700">
+            <input
+              type="checkbox"
+              className="h-4 w-4 rounded border-neutral-300 text-indigo-600 focus:ring-indigo-500"
+              checked={assignedToMeOnly}
+              onChange={(event) =>
+                onAssignedToMeOnlyChange(event.target.checked)
+              }
+            />
+            <span className="font-medium">Assigned to me</span>
+          </label>
+        </div>
+
+        <div className="mt-2 text-[11px] text-neutral-500">
+          Sorted by latest activity
+        </div>
       </div>
 
       <div className="mt-2 space-y-2">
@@ -71,22 +145,37 @@ export function SupportInboxList({
               key={conversation.id}
               type="button"
               onClick={() => onSelectConversation(conversation.id)}
-              className={`w-full rounded-xl border px-3 py-2 text-left transition-colors ${
+              aria-pressed={isActive}
+              className={`w-full rounded-xl border px-3 py-2 text-left transition-all ${
                 isActive
-                  ? "border-indigo-200 bg-indigo-50"
-                  : "border-neutral-200 bg-white hover:bg-neutral-50"
+                  ? "border-indigo-500 bg-indigo-50 shadow-sm ring-1 ring-indigo-200"
+                  : "border-neutral-200 bg-white hover:border-neutral-300 hover:bg-neutral-50"
               }`}
             >
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <div className="truncate text-sm font-medium text-neutral-900">
+                  <div
+                    className={`truncate text-sm font-medium ${
+                      isActive ? "text-indigo-900" : "text-neutral-900"
+                    }`}
+                  >
                     {title}
                   </div>
-                  <div className="mt-1 line-clamp-2 text-xs text-neutral-600">
+                  <div
+                    className={`mt-1 line-clamp-2 text-xs ${
+                      isActive ? "text-indigo-800" : "text-neutral-600"
+                    }`}
+                  >
                     {formatConversationPreview(conversation)}
                   </div>
                 </div>
-                <div className="text-[11px] text-neutral-500">
+                <div
+                  className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                    isActive
+                      ? "bg-indigo-100 text-indigo-700"
+                      : "text-neutral-500"
+                  }`}
+                >
                   {conversation.messageCount}
                 </div>
               </div>

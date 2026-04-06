@@ -2,7 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { getConversationById, listConversations } from "@/lib/api";
-import type { SupportConversation } from "../types";
+import type {
+  ConversationPriority,
+  ConversationStatus,
+  SupportConversation,
+} from "../types";
 import { getSocket } from "@/lib/socket";
 
 function mergeConversation(
@@ -16,7 +20,15 @@ function mergeConversation(
   return { ...current, ...next };
 }
 
-export function useConversations(enabled: boolean) {
+export function useConversations(
+  enabled: boolean,
+  preferredConversationId?: string | null,
+) {
+  const [filters, setFilters] = useState<{
+    status?: ConversationStatus;
+    priority?: ConversationPriority;
+    assigneeId?: string;
+  }>({});
   const [conversations, setConversations] = useState<SupportConversation[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<
     string | null
@@ -39,12 +51,18 @@ export function useConversations(enabled: boolean) {
     (async () => {
       try {
         setLoadingList(true);
-        const items = await listConversations();
+        const items = await listConversations(filters);
         if (cancelled) return;
 
         setConversations(items);
         setActiveConversationId((prev) => {
           if (prev && items.some((item) => item.id === prev)) return prev;
+          if (
+            preferredConversationId &&
+            items.some((item) => item.id === preferredConversationId)
+          ) {
+            return preferredConversationId;
+          }
           return items[0]?.id ?? null;
         });
       } catch (error) {
@@ -61,7 +79,7 @@ export function useConversations(enabled: boolean) {
     return () => {
       cancelled = true;
     };
-  }, [enabled]);
+  }, [enabled, filters, preferredConversationId]);
 
   useEffect(() => {
     if (!enabled || !activeConversationId) {
@@ -131,6 +149,8 @@ export function useConversations(enabled: boolean) {
   }, [enabled]);
 
   return {
+    filters,
+    setFilters,
     conversations,
     setConversations,
     activeConversationId,

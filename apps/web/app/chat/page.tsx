@@ -7,7 +7,7 @@ import {
   type UIEvent,
   type ChangeEvent,
 } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import {
   assignConversation,
@@ -28,9 +28,12 @@ import {
 } from "@/lib/notifications";
 
 import type {
+  ConversationPriority,
   ConversationLifecycleAction,
+  ConversationStatus,
   Message,
   Me,
+  SupportConversation,
 } from "./types";
 
 import { MessageList } from "./components/MessageList";
@@ -71,8 +74,54 @@ type ReplyTarget = {
   content: string | null;
 };
 
+const SUPPORT_STATUS_VALUES: ConversationStatus[] = [
+  "OPEN",
+  "PENDING",
+  "RESOLVED",
+  "CLOSED",
+];
+
+const SUPPORT_PRIORITY_VALUES: ConversationPriority[] = [
+  "LOW",
+  "NORMAL",
+  "HIGH",
+  "URGENT",
+];
+
+function parseSupportStatus(value: string | null): ConversationStatus | "ALL" {
+  if (value && SUPPORT_STATUS_VALUES.includes(value as ConversationStatus)) {
+    return value as ConversationStatus;
+  }
+
+  return "ALL";
+}
+
+function parseSupportPriority(
+  value: string | null,
+): ConversationPriority | "ALL" {
+  if (
+    value &&
+    SUPPORT_PRIORITY_VALUES.includes(value as ConversationPriority)
+  ) {
+    return value as ConversationPriority;
+  }
+
+  return "ALL";
+}
+
+function getLatestConversationActivityAt(conversation: SupportConversation) {
+  return (
+    conversation.lastMessageAt ??
+    conversation.latestMessagePreview?.createdAt ??
+    conversation.updatedAt ??
+    conversation.createdAt
+  );
+}
+
 export default function ChatPage() {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
 
   // --- auth ---
   const { user, setUser } = useAuthGuard();
@@ -94,7 +143,9 @@ export default function ChatPage() {
   } = useChannels(user);
 
   const isAdmin = user?.role === "ADMIN";
+  const supportConversationParam = searchParams.get("supportConversation");
   const {
+    setFilters: setConversationFilters,
     conversations,
     setConversations,
     activeConversationId,
@@ -103,9 +154,38 @@ export default function ChatPage() {
     setActiveConversation,
     loadingList: conversationsLoading,
     loadingActive: activeConversationLoading,
-  } = useConversations(!!isAdmin);
+  } = useConversations(!!isAdmin, supportConversationParam);
+  const supportStatusFilter = parseSupportStatus(
+    searchParams.get("supportStatus"),
+  );
+  const supportPriorityFilter = parseSupportPriority(
+    searchParams.get("supportPriority"),
+  );
+  const supportAssignedToMeOnly = searchParams.get("supportMine") === "1";
+  const [activeView, setActiveView] = useState<"chat" | "support">(() => {
+    const queryView = searchParams.get("view");
+    if (queryView === "support" || supportConversationParam) {
+      return "support";
+    }
 
-  const [activeView, setActiveView] = useState<"chat" | "support">("chat");
+    return "chat";
+  });
+
+  function replaceQueryParams(
+    updater: (params: URLSearchParams) => void,
+  ) {
+    const nextParams = new URLSearchParams(searchParams.toString());
+    updater(nextParams);
+
+    const currentQuery = searchParams.toString();
+    const nextQuery = nextParams.toString();
+
+    if (currentQuery === nextQuery) return;
+
+    router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname, {
+      scroll: false,
+    });
+  }
 
   // Persist active channel in localStorage
   function setActiveAndPersist(id: string) {
@@ -140,6 +220,11 @@ export default function ChatPage() {
   const [assistantDraftAt, setAssistantDraftAt] = useState<string | null>(null);
   const [assistantLoading, setAssistantLoading] = useState(false);
   const [assistantError, setAssistantError] = useState<string | null>(null);
+  const sortedConversations = [...conversations].sort((a, b) => {
+    const left = new Date(getLatestConversationActivityAt(a)).getTime();
+    const right = new Date(getLatestConversationActivityAt(b)).getTime();
+    return right - left;
+  });
 
   useMobileSidebar(sidebarOpen, setSidebarOpen);
 
@@ -237,6 +322,112 @@ export default function ChatPage() {
 
     restoredOnceRef.current = true;
   }, [user?.sub, channels, setActive]);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+
+    setConversationFilters({
+      status:
+        supportStatusFilter === "ALL" ? undefined : supportStatusFilter,
+      priority:
+        supportPriorityFilter === "ALL" ? undefined : supportPriorityFilter,
+      assigneeId: supportAssignedToMeOnly ? user?.sub : undefined,
+    });
+  }, [
+    isAdmin,
+    setConversationFilters,
+    supportAssignedToMeOnly,
+    supportPriorityFilter,
+    supportStatusFilter,
+    user?.sub,
+  ]);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+
+    const queryView = searchParams.get("view");
+    if (queryView === "support" || supportConversationParam) {
+      setActiveView("support");
+      return;
+    }
+
+    if (queryView === "chat") {
+      setActiveView("chat");
+    }
+  }, [isAdmin, searchParams, supportConversationParam]);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    if (!conversations.length) return;
+    if (!supportConversationParam) return;
+    if (!conversations.some((item) => item.id === supportConversationParam)) {
+      return;
+    }
+    if (
+      activeConversationId &&
+      conversations.some((item) => item.id === activeConversationId)
+    ) {
+      return;
+    }
+
+    setActiveConversationId(supportConversationParam);
+  }, [
+    activeConversationId,
+    conversations,
+    isAdmin,
+    setActiveConversationId,
+    supportConversationParam,
+  ]);
+
+  useEffect(() => {
+    const nextParams = new URLSearchParams(searchParams.toString());
+
+    nextParams.set("view", activeView);
+
+    if (activeView === "support" && activeConversationId) {
+      nextParams.set("supportConversation", activeConversationId);
+    } else if (activeView !== "support") {
+      nextParams.delete("supportConversation");
+    }
+
+    if (supportStatusFilter === "ALL") {
+      nextParams.delete("supportStatus");
+    } else {
+      nextParams.set("supportStatus", supportStatusFilter);
+    }
+
+    if (supportPriorityFilter === "ALL") {
+      nextParams.delete("supportPriority");
+    } else {
+      nextParams.set("supportPriority", supportPriorityFilter);
+    }
+
+    if (supportAssignedToMeOnly) {
+      nextParams.set("supportMine", "1");
+    } else {
+      nextParams.delete("supportMine");
+    }
+
+    nextParams.set("supportSort", "latest_activity");
+
+    const currentQuery = searchParams.toString();
+    const nextQuery = nextParams.toString();
+
+    if (currentQuery === nextQuery) return;
+
+    router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname, {
+      scroll: false,
+    });
+  }, [
+    activeConversationId,
+    activeView,
+    pathname,
+    router,
+    searchParams,
+    supportAssignedToMeOnly,
+    supportPriorityFilter,
+    supportStatusFilter,
+  ]);
 
   useEffect(() => {
     if (!active) return;
@@ -633,7 +824,7 @@ export default function ChatPage() {
             formatLastOnline={formatLastOnline}
             meId={user.sub}
             isAdmin={user.role === "ADMIN"}
-            conversations={conversations}
+            conversations={sortedConversations}
             activeConversationId={
               activeView === "support" ? activeConversationId : null
             }
@@ -641,6 +832,39 @@ export default function ChatPage() {
               setActiveView("support");
               setActiveConversationId(conversationId);
               setSidebarOpen(false);
+            }}
+            supportStatusFilter={supportStatusFilter}
+            supportPriorityFilter={supportPriorityFilter}
+            supportAssignedToMeOnly={supportAssignedToMeOnly}
+            onSupportStatusFilterChange={(value) => {
+              replaceQueryParams((params) => {
+                if (value === "ALL") {
+                  params.delete("supportStatus");
+                } else {
+                  params.set("supportStatus", value);
+                }
+                params.delete("supportConversation");
+              });
+            }}
+            onSupportPriorityFilterChange={(value) => {
+              replaceQueryParams((params) => {
+                if (value === "ALL") {
+                  params.delete("supportPriority");
+                } else {
+                  params.set("supportPriority", value);
+                }
+                params.delete("supportConversation");
+              });
+            }}
+            onSupportAssignedToMeOnlyChange={(value) => {
+              replaceQueryParams((params) => {
+                if (value) {
+                  params.set("supportMine", "1");
+                } else {
+                  params.delete("supportMine");
+                }
+                params.delete("supportConversation");
+              });
             }}
             conversationsLoading={conversationsLoading}
           />
