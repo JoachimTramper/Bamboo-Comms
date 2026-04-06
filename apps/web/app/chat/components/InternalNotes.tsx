@@ -118,7 +118,7 @@ export function InternalNotes({
   }
 
   return (
-    <div className="rounded-2xl border border-dashed border-neutral-300 bg-neutral-50/80 p-4">
+    <div className="rounded-2xl border border-dashed border-neutral-300 bg-neutral-50/80 p-3">
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="text-sm font-semibold text-neutral-900">

@@ -23,13 +23,15 @@ function formatDate(value?: string | null) {
 
 function infoCard(title: string, value: string, hint?: string) {
   return (
-    <div className="rounded-2xl border border-neutral-200 bg-white/90 p-3 shadow-sm">
+    <div className="rounded-xl border border-neutral-200 bg-white/90 px-3 py-2.5 shadow-sm">
       <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-neutral-500">
         {title}
       </div>
-      <div className="mt-1 text-sm font-medium text-neutral-900">{value}</div>
+      <div className="mt-1 text-sm font-medium leading-5 text-neutral-900">
+        {value}
+      </div>
       {hint ? (
-        <div className="mt-1 text-xs text-neutral-500">{hint}</div>
+        <div className="mt-0.5 text-xs leading-5 text-neutral-500">{hint}</div>
       ) : null}
     </div>
   );
@@ -47,8 +49,8 @@ export function SupportConversationMeta({ conversation }: Props) {
     : conversation.customer?.planTier ?? undefined;
 
   return (
-    <div className="border-b border-neutral-200 bg-stone-50/90 px-4 py-4">
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+    <div className="border-b border-neutral-200 bg-stone-50/90 px-4 py-2.5">
+      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
         {infoCard("Customer", customerName, customerHint)}
         {infoCard(
           "Assignee",
