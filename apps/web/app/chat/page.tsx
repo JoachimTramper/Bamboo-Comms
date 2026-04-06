@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Suspense,
   useRef,
   useState,
   useEffect,
@@ -118,7 +119,7 @@ function getLatestConversationActivityAt(conversation: SupportConversation) {
   );
 }
 
-export default function ChatPage() {
+function ChatPageContent() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -1035,5 +1036,13 @@ export default function ChatPage() {
         }}
       />
     </div>
+  );
+}
+
+export default function ChatPage() {
+  return (
+    <Suspense fallback={<div className="min-h-dvh bg-stone-100" />}>
+      <ChatPageContent />
+    </Suspense>
   );
 }
