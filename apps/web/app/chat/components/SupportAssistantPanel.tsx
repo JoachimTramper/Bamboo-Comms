@@ -60,10 +60,10 @@ export function SupportAssistantPanel({
   }, [defaultOpen, draft, error]);
 
   return (
-    <div className="border-b border-neutral-200 bg-white/90 px-4 py-2.5">
-      <div className="rounded-2xl border border-indigo-100 bg-[linear-gradient(135deg,rgba(224,231,255,0.7),rgba(255,255,255,0.95))] px-4 py-3 shadow-sm">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
+    <div className="border-b border-slate-200 bg-white/90 px-4 py-2.5 sm:px-5">
+      <div className="rounded-2xl border border-indigo-200 bg-[linear-gradient(135deg,rgba(224,231,255,0.9),rgba(255,255,255,0.98))] px-4 py-3 shadow-sm">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
             <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-indigo-600">
               AI Assistant
             </div>
@@ -75,21 +75,13 @@ export function SupportAssistantPanel({
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2">
             <button
               type="button"
               onClick={() => setOpen((value) => !value)}
-              className="rounded-full border border-indigo-200 bg-white/90 px-3 py-1.5 text-sm font-medium text-indigo-700 transition-colors hover:bg-indigo-50"
+              className="rounded-full border border-indigo-200 bg-white/90 px-3 py-1.5 text-sm font-medium text-indigo-700 shadow-sm transition-colors hover:bg-indigo-50"
             >
               {open ? "Collapse" : "Expand"}
-            </button>
-            <button
-              type="button"
-              onClick={onGenerate}
-              disabled={loading}
-              className="rounded-full border border-indigo-200 bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {loading ? "Generating Reply..." : "Generate Reply"}
             </button>
           </div>
         </div>
@@ -125,6 +117,16 @@ export function SupportAssistantPanel({
                 placeholder="Example: Keep it short and offer one concrete next step."
                 className="mt-2 w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 outline-none transition-colors placeholder:text-neutral-400 focus:border-indigo-300"
               />
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={onGenerate}
+                  disabled={loading}
+                  className="rounded-full border border-indigo-200 bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {loading ? "Generating Reply..." : "Generate Reply"}
+                </button>
+              </div>
             </div>
 
             {loading && (
@@ -150,7 +152,7 @@ export function SupportAssistantPanel({
               </div>
             )}
 
-            <div className="mt-3 rounded-2xl border border-neutral-200 bg-white/95 p-4">
+            <div className="mt-3 rounded-2xl border border-indigo-200/70 bg-white/95 p-4 shadow-sm">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="text-sm font-medium text-neutral-900">
                   Draft Reply
@@ -198,7 +200,7 @@ export function SupportAssistantPanel({
                   </div>
                 </>
               ) : (
-                <div className="mt-3 text-sm text-neutral-500">
+                <div className="mt-3 rounded-2xl border border-dashed border-neutral-200 bg-stone-50 px-4 py-4 text-sm text-neutral-500">
                   {loading
                     ? "The draft preview will appear here when generation finishes."
                     : "Generate a draft to preview an AI-written reply for this conversation."}

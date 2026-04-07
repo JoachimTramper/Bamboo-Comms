@@ -806,7 +806,7 @@ function ChatPageContent() {
         searchDisabled={activeView === "support"}
       />
 
-      <div className="flex-1 min-h-0 flex relative md:bg-stone-100">
+      <div className="relative flex min-h-0 flex-1 md:bg-stone-100">
         {sidebarOpen && (
           <div
             className="fixed inset-0 bg-black/30 z-40 md:hidden"
@@ -816,7 +816,7 @@ function ChatPageContent() {
 
         <div
           className={`
-            absolute inset-y-0 left-0 z-50 w-64 bg-stone-100
+            absolute inset-y-0 left-0 z-50 w-[min(20rem,calc(100vw-1rem))] bg-stone-100
             transform transition-transform duration-200 ease-out
             ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}
             md:static md:translate-x-0 md:w-72 md:bg-stone-100 md:h-full md:block
@@ -904,7 +904,7 @@ function ChatPageContent() {
             md:shadow-[inset_0_1px_0_rgba(255,255,255,0.4)]
           "
         >
-          <div className="flex-1 min-h-0 relative z-20">
+          <div className="relative z-20 flex-1 min-h-0">
             {activeView === "chat" && (activeChannel?.isDirect ?? false) ? (
               <div className="absolute top-0 left-0 right-0 z-40">
                 <ChatTitleBubble
@@ -922,66 +922,12 @@ function ChatPageContent() {
             ) : null}
 
             <div
-              className={`h-full flex flex-col ${
+              className={`flex h-full min-h-0 flex-col ${
                 activeView === "support"
                   ? "bg-[radial-gradient(circle_at_top_left,_rgba(226,232,240,0.9),_rgba(245,245,244,0.92)_42%,_rgba(255,255,255,0.88)_100%)]"
                   : ""
               }`}
             >
-              {activeView === "support" && activeConversation && (
-                <SupportConversationHeader conversation={activeConversation} />
-              )}
-
-              {activeView === "support" && activeConversation && (
-                <SupportConversationMeta conversation={activeConversation} />
-              )}
-
-              {activeView === "support" && activeConversation && (
-                <ConversationControls
-                  conversation={activeConversation}
-                  me={{ id: user.sub, displayName: user.displayName }}
-                  canManage={user.role === "ADMIN"}
-                  updatingStatus={updatingStatus}
-                  updatingAssignment={updatingAssignment}
-                  updatingPriority={updatingPriority}
-                  updatingTags={updatingTags}
-                  updatingEscalation={updatingEscalation}
-                  onTransition={handleTransitionConversation}
-                  onAssign={handleAssignConversation}
-                  onPriorityChange={handleUpdateConversationPriority}
-                  onTagsChange={handleUpdateConversationTags}
-                  onEscalationChange={handleUpdateConversationEscalation}
-                />
-              )}
-
-              {activeView === "support" && activeConversation && (
-                <SupportAssistantPanel
-                  draft={assistantDraft}
-                  generatedAt={assistantDraftAt}
-                  confidence={assistantConfidence}
-                  confidenceHint={assistantConfidenceHint}
-                  instructions={assistantInstructions}
-                  loading={assistantLoading}
-                  error={assistantError}
-                  onInstructionsChange={setAssistantInstructions}
-                  onGenerate={handleGenerateDraft}
-                  onUseDraft={handleUseDraft}
-                  onClearDraft={() => {
-                    setAssistantDraft("");
-                    setAssistantDraftAt(null);
-                    setAssistantConfidence(null);
-                    setAssistantConfidenceHint(null);
-                    setAssistantError(null);
-                  }}
-                />
-              )}
-
-              {activeView === "support" && conversationActionError && (
-                <div className="border-b border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700">
-                  {conversationActionError}
-                </div>
-              )}
-
               {activeView === "support" &&
                 !activeConversationLoading &&
                 (!activeConversation ? (
@@ -1025,11 +971,59 @@ function ChatPageContent() {
                     }
                     lastReadMessageIdByOthers={lastReadMessageIdByOthers}
                     scrollToMessageId={scrollToMessageId}
-                    onScrolledToMessage={() => setScrollToMessageId(null)}
-                    loadingOlder={loadingOlder}
-                    onRetrySend={retrySend}
-                  />
-                )}
+                  onScrolledToMessage={() => setScrollToMessageId(null)}
+                  loadingOlder={loadingOlder}
+                  onRetrySend={retrySend}
+                  paddingTopClassName={activeView === "support" ? "pt-0" : undefined}
+                  headerContent={
+                    activeView === "support" && activeConversation ? (
+                      <>
+                        <SupportConversationHeader conversation={activeConversation} />
+                        <SupportConversationMeta conversation={activeConversation} />
+                        <ConversationControls
+                          conversation={activeConversation}
+                          me={{ id: user.sub, displayName: user.displayName }}
+                          canManage={user.role === "ADMIN"}
+                          updatingStatus={updatingStatus}
+                          updatingAssignment={updatingAssignment}
+                          updatingPriority={updatingPriority}
+                          updatingTags={updatingTags}
+                          updatingEscalation={updatingEscalation}
+                          onTransition={handleTransitionConversation}
+                          onAssign={handleAssignConversation}
+                          onPriorityChange={handleUpdateConversationPriority}
+                          onTagsChange={handleUpdateConversationTags}
+                          onEscalationChange={handleUpdateConversationEscalation}
+                        />
+                        <SupportAssistantPanel
+                          draft={assistantDraft}
+                          generatedAt={assistantDraftAt}
+                          confidence={assistantConfidence}
+                          confidenceHint={assistantConfidenceHint}
+                          instructions={assistantInstructions}
+                          loading={assistantLoading}
+                          error={assistantError}
+                          onInstructionsChange={setAssistantInstructions}
+                          onGenerate={handleGenerateDraft}
+                          onUseDraft={handleUseDraft}
+                          onClearDraft={() => {
+                            setAssistantDraft("");
+                            setAssistantDraftAt(null);
+                            setAssistantConfidence(null);
+                            setAssistantConfidenceHint(null);
+                            setAssistantError(null);
+                          }}
+                        />
+                        {conversationActionError && (
+                          <div className="border-b border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700">
+                            {conversationActionError}
+                          </div>
+                        )}
+                      </>
+                    ) : null
+                  }
+                />
+              )}
             </div>
           </div>
 

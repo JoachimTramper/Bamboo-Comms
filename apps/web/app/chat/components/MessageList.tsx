@@ -4,6 +4,7 @@ import {
   useEffect,
   useRef,
   useState,
+  type ReactNode,
   type RefObject,
   type UIEvent,
 } from "react";
@@ -32,6 +33,8 @@ type Props = {
   onScrolledToMessage?: () => void;
   loadingOlder: boolean;
   onRetrySend?: (id: string) => void;
+  headerContent?: ReactNode;
+  paddingTopClassName?: string;
 };
 
 export function MessageList({
@@ -55,6 +58,8 @@ export function MessageList({
   onScrolledToMessage,
   loadingOlder,
   onRetrySend,
+  headerContent,
+  paddingTopClassName,
 }: Props) {
   const safeMsgs = msgs;
 
@@ -168,8 +173,11 @@ export function MessageList({
     <div
       ref={listRef}
       onScroll={onScroll}
-      className={`flex-1 overflow-auto pt-16 ${isDirect ? "md:pt-14" : "md:pt-4"} pb-20 scrollbar-gutter-stable`}
+      className={`min-h-0 flex-1 overflow-auto overscroll-contain ${
+        paddingTopClassName ?? (isDirect ? "pt-16 md:pt-14" : "pt-16 md:pt-4")
+      } pb-28 md:pb-20 scrollbar-gutter-stable`}
     >
+      {headerContent}
       <div
         ref={contentRef}
         className={

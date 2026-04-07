@@ -99,17 +99,21 @@ export function ConversationControls({
 
   useEffect(() => {
     setEscalationReasonDraft(conversation.escalationReason ?? "");
-  }, [conversation.id, conversation.isEscalated, conversation.escalationReason]);
+  }, [
+    conversation.id,
+    conversation.isEscalated,
+    conversation.escalationReason,
+  ]);
 
   useEffect(() => {
     setOpen(false);
   }, [conversation.id]);
 
   return (
-    <div className="border-b border-neutral-200 bg-white/85 px-4 py-2.5 backdrop-blur-sm">
-      <div className="rounded-3xl border border-neutral-200 bg-white/95 p-4 shadow-sm">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
+    <div className="border-b border-slate-200 bg-white/85 px-4 py-2.5 backdrop-blur-sm">
+      <div className="rounded-3xl border border-slate-200 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(244,244,245,0.92))] p-4 shadow-sm">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
             <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-neutral-500">
               Conversation Management
             </div>
@@ -117,15 +121,20 @@ export function ConversationControls({
               Workflow controls for this support thread. Changes update the live
               conversation record only.
             </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="rounded-full border border-neutral-200 bg-neutral-50 px-3 py-1 text-xs text-neutral-600">
-              Current owner: {conversation.assignee?.displayName ?? "Unassigned"}
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs text-neutral-600 shadow-sm">
+                Assignee: {conversation.assignee?.displayName ?? "Unassigned"}
+              </div>
+              <div className="rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-700 shadow-sm">
+                Status: {conversation.status}
+              </div>
             </div>
+          </div>
+          <div className="shrink-0">
             <button
               type="button"
               onClick={() => setOpen((value) => !value)}
-              className="rounded-full border border-neutral-300 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-100"
+              className="rounded-full border border-neutral-300 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 shadow-sm transition-colors hover:bg-neutral-100"
             >
               {open ? "Collapse" : "Expand"}
             </button>
@@ -134,8 +143,8 @@ export function ConversationControls({
 
         {open ? (
           <>
-            <div className="mt-4 grid gap-4 xl:grid-cols-2">
-              <div className="rounded-2xl border border-neutral-200 bg-stone-50/70 p-4">
+            <div className="mt-4 grid gap-4 lg:grid-cols-1 xl:grid-cols-2">
+              <div className="rounded-2xl border border-indigo-200 bg-indigo-50/55 p-4 shadow-sm">
                 {sectionLabel(
                   "Workflow",
                   "Status transitions continue to follow the backend lifecycle rules.",
@@ -161,20 +170,35 @@ export function ConversationControls({
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-neutral-200 bg-stone-50/70 p-4">
+              <div className="rounded-2xl border border-sky-200 bg-sky-50/55 p-4 shadow-sm">
                 {sectionLabel(
                   "Assignment",
                   "Improved incrementally with a compact assignee selector and quick actions.",
                 )}
-                <div className="mt-3 flex flex-wrap items-center gap-2">
+                <div className="mt-3 rounded-2xl border border-sky-200 bg-white/90 p-3">
+                  <div className="text-xs font-medium text-neutral-500">
+                    Current assignee
+                  </div>
+                  <div className="mt-1 text-sm font-medium text-neutral-900">
+                    {conversation.assignee?.displayName ?? "Unassigned"}
+                  </div>
+                  <div className="mt-1 text-xs text-neutral-500">
+                    {conversation.assignee?.email ??
+                      "No agent owns this thread yet."}
+                  </div>
+                </div>
+                <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
                   <select
                     value={conversation.assigneeId ?? ""}
                     onChange={(event) => onAssign(event.target.value || null)}
                     disabled={!canManage || updatingAssignment}
-                    className="min-w-[13rem] rounded-xl border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 disabled:cursor-not-allowed disabled:bg-neutral-100"
+                    className="min-w-[13rem] flex-1 rounded-xl border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 disabled:cursor-not-allowed disabled:bg-neutral-100"
                   >
                     {assignmentOptions.map((option) => (
-                      <option key={option.value || "unassigned"} value={option.value}>
+                      <option
+                        key={option.value || "unassigned"}
+                        value={option.value}
+                      >
                         {option.label}
                       </option>
                     ))}
@@ -198,7 +222,7 @@ export function ConversationControls({
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-neutral-200 bg-stone-50/70 p-4">
+              <div className="rounded-2xl border border-amber-200 bg-amber-50/55 p-4 shadow-sm">
                 {sectionLabel(
                   "Priority",
                   "Priority updates are persisted immediately on the conversation.",
@@ -213,7 +237,7 @@ export function ConversationControls({
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-neutral-200 bg-stone-50/70 p-4">
+              <div className="rounded-2xl border border-violet-200 bg-violet-50/55 p-4 shadow-sm">
                 {sectionLabel(
                   "Tags",
                   "Use lightweight tags to classify the thread without changing chat behavior.",
@@ -228,7 +252,7 @@ export function ConversationControls({
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-neutral-200 bg-stone-50/70 p-4 xl:col-span-2">
+              <div className="rounded-2xl border border-rose-200 bg-rose-50/55 p-4 shadow-sm xl:col-span-2">
                 {sectionLabel(
                   "Escalation",
                   "Manual human handoff flag for cases that need extra review. No automatic routing or notifications yet.",
@@ -236,13 +260,15 @@ export function ConversationControls({
                 <div className="mt-3 space-y-3">
                   <textarea
                     value={escalationReasonDraft}
-                    onChange={(event) => setEscalationReasonDraft(event.target.value)}
+                    onChange={(event) =>
+                      setEscalationReasonDraft(event.target.value)
+                    }
                     disabled={!canManage || updatingEscalation}
                     rows={3}
                     placeholder="Optional reason for escalation"
                     className="w-full resize-none rounded-xl border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 outline-none transition focus:border-rose-300 focus:ring-2 focus:ring-rose-100 disabled:cursor-not-allowed disabled:bg-neutral-100"
                   />
-                  <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
                     <button
                       type="button"
                       onClick={() =>
@@ -279,11 +305,14 @@ export function ConversationControls({
                     </button>
                     {conversation.isEscalated && (
                       <div className="text-xs text-neutral-500">
-                        Escalated{conversation.escalatedBy?.displayName
+                        Escalated
+                        {conversation.escalatedBy?.displayName
                           ? ` by ${conversation.escalatedBy.displayName}`
-                          : ""}{conversation.escalationTarget
+                          : ""}
+                        {conversation.escalationTarget
                           ? ` to ${conversation.escalationTarget.replaceAll("_", " ")}`
-                          : ""}.
+                          : ""}
+                        .
                       </div>
                     )}
                   </div>
@@ -300,13 +329,16 @@ export function ConversationControls({
           </>
         ) : (
           <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-neutral-600">
-            <span className="rounded-full border border-neutral-200 bg-stone-50 px-3 py-1">
+            <span className="rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 shadow-sm">
               Status: {conversation.status}
             </span>
-            <span className="rounded-full border border-neutral-200 bg-stone-50 px-3 py-1">
+            <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 shadow-sm">
               Priority: {conversation.priority}
             </span>
-            <span className="rounded-full border border-neutral-200 bg-stone-50 px-3 py-1">
+            <span className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1 shadow-sm">
+              Assignee: {conversation.assignee?.displayName ?? "Unassigned"}
+            </span>
+            <span className="rounded-full border border-violet-200 bg-violet-50 px-3 py-1 shadow-sm">
               Tags: {conversation.tags?.length ?? 0}
             </span>
           </div>

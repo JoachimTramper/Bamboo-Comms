@@ -29,6 +29,15 @@ function formatConversationPreview(conversation: SupportConversation) {
   return "No messages yet";
 }
 
+function formatConversationTitle(conversation: SupportConversation) {
+  return (
+    conversation.subject?.trim() ||
+    conversation.customer?.name?.trim() ||
+    conversation.customer?.email?.trim() ||
+    "Unknown customer"
+  );
+}
+
 function badgeClass(value: string) {
   switch (value) {
     case "OPEN":
@@ -134,11 +143,8 @@ export function SupportInboxList({
       <div className="mt-2 space-y-2">
         {conversations.map((conversation) => {
           const isActive = activeConversationId === conversation.id;
-          const title =
-            conversation.subject ??
-            conversation.customer?.name ??
-            conversation.customer?.email ??
-            "Untitled conversation";
+          const title = formatConversationTitle(conversation);
+          const assigneeLabel = conversation.assignee?.displayName ?? "Unassigned";
 
           return (
             <button
@@ -170,36 +176,36 @@ export function SupportInboxList({
                   </div>
                 </div>
                 <div
-                  className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                  className={`inline-flex min-w-[2rem] items-center justify-center rounded-full border px-2 py-1 text-[11px] font-semibold leading-none ${
                     isActive
-                      ? "bg-indigo-100 text-indigo-700"
-                      : "text-neutral-500"
+                      ? "border-indigo-200 bg-indigo-100 text-indigo-700"
+                      : "border-neutral-200 bg-white text-neutral-500"
                   }`}
                 >
                   {conversation.messageCount}
                 </div>
               </div>
 
-              <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              <div className="mt-2 flex flex-wrap items-center gap-2">
                 <span
-                  className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${badgeClass(
+                  className={`inline-flex items-center rounded-full border px-2 py-1 text-[10px] font-semibold leading-none ${badgeClass(
                     conversation.status,
                   )}`}
                 >
                   {conversation.status}
                 </span>
                 <span
-                  className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${badgeClass(
+                  className={`inline-flex items-center rounded-full border px-2 py-1 text-[10px] font-semibold leading-none ${badgeClass(
                     conversation.priority,
                   )}`}
                 >
                   {conversation.priority}
                 </span>
-                <span className="truncate text-[11px] text-neutral-500">
-                  {conversation.assignee?.displayName ?? "Unassigned"}
+                <span className="rounded-full border border-neutral-200 bg-neutral-50 px-2 py-1 text-[11px] leading-none text-neutral-600">
+                  {assigneeLabel}
                 </span>
                 {conversation.isEscalated && (
-                  <span className="rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[10px] font-semibold text-rose-700">
+                  <span className="inline-flex items-center rounded-full border border-rose-200 bg-rose-50 px-2 py-1 text-[10px] font-semibold leading-none text-rose-700">
                     Escalated
                   </span>
                 )}
@@ -210,7 +216,7 @@ export function SupportInboxList({
 
         {!loading && conversations.length === 0 && (
           <div className="rounded-xl border border-dashed border-neutral-200 bg-white px-3 py-4 text-sm text-neutral-500">
-            No support conversations yet
+            No support conversations match the current filters.
           </div>
         )}
       </div>

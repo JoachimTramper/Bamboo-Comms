@@ -6,6 +6,14 @@ type Props = {
   conversation: SupportConversation;
 };
 
+function formatCustomerLabel(conversation: SupportConversation) {
+  return (
+    conversation.customer?.name?.trim() ||
+    conversation.customer?.email?.trim() ||
+    "Unknown customer"
+  );
+}
+
 function badgeClass(value: string) {
   switch (value) {
     case "OPEN":
@@ -28,28 +36,36 @@ function badgeClass(value: string) {
 }
 
 export function SupportConversationHeader({ conversation }: Props) {
-  const customerLabel =
-    conversation.customer?.name ??
-    conversation.customer?.email ??
-    "Unknown customer";
+  const customerLabel = formatCustomerLabel(conversation);
+  const assigneeLabel = conversation.assignee?.displayName ?? "Unassigned";
 
   return (
-    <div className="border-b border-neutral-200 bg-white/95 px-4 py-3 backdrop-blur-sm">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+    <div className="border-b border-slate-200 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(248,250,252,0.96))] px-4 py-3 backdrop-blur-sm sm:px-5">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0 flex-1">
           <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-neutral-500">
             Support Conversation
           </div>
-          <div className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-            <div className="min-w-0 text-lg font-semibold text-neutral-900">
+          <div className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1.5">
+            <div className="min-w-0 text-lg font-semibold leading-7 text-neutral-900">
               {conversation.subject ?? "Untitled conversation"}
             </div>
-            <div className="text-sm text-neutral-600">{customerLabel}</div>
+            <div className="text-sm font-medium text-neutral-600">
+              {customerLabel}
+            </div>
             {conversation.customer?.company && (
               <div className="text-xs text-neutral-500">
                 {conversation.customer.company}
               </div>
             )}
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-neutral-500">
+            <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 shadow-sm">
+              Assignee: {assigneeLabel}
+            </span>
+            <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 shadow-sm">
+              {conversation.messageCount} messages
+            </span>
           </div>
           {conversation.isEscalated && (
             <div className="mt-2 max-w-2xl rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
@@ -66,32 +82,26 @@ export function SupportConversationHeader({ conversation }: Props) {
           )}
         </div>
 
-        <div className="flex max-w-full flex-wrap items-center justify-end gap-2 text-xs">
+        <div className="flex max-w-full flex-wrap items-center gap-2 self-start rounded-2xl border border-slate-200/80 bg-white/85 px-3 py-2 text-xs shadow-sm lg:justify-end">
           <span
-            className={`rounded-full border px-2.5 py-1 font-semibold leading-none ${badgeClass(
+            className={`inline-flex items-center rounded-full border px-2.5 py-1 font-semibold leading-none ${badgeClass(
               conversation.status,
             )}`}
           >
             {conversation.status}
           </span>
           <span
-            className={`rounded-full border px-2.5 py-1 font-semibold leading-none ${badgeClass(
+            className={`inline-flex items-center rounded-full border px-2.5 py-1 font-semibold leading-none ${badgeClass(
               conversation.priority,
             )}`}
           >
             {conversation.priority}
           </span>
-          <span className="rounded-full border border-neutral-200 bg-neutral-50 px-2.5 py-1 leading-none text-neutral-600">
-            {conversation.assignee?.displayName ?? "Unassigned"}
-          </span>
           {conversation.isEscalated && (
-            <span className="rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 font-semibold leading-none text-rose-700">
+            <span className="inline-flex items-center rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 font-semibold leading-none text-rose-700">
               Escalated
             </span>
           )}
-          <span className="rounded-full border border-neutral-200 bg-white px-2.5 py-1 leading-none text-neutral-500">
-            {conversation.messageCount} messages
-          </span>
         </div>
       </div>
     </div>

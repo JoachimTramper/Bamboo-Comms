@@ -93,7 +93,7 @@ export function Sidebar({
   }
 
   return (
-    <aside className="p-3 overflow-auto min-h-0">
+    <aside className="min-h-0 overflow-auto p-3">
       {/* Channels + DMs */}
       <div className="space-y-3">
         {isAdmin && onSelectConversation && (
