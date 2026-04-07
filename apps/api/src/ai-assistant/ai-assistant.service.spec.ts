@@ -97,6 +97,10 @@ describe('AiAssistantService', () => {
   });
 
   it('generates a support draft for agent users from conversation context', async () => {
+    knowledgeBase.retrieveRelevantSnippets.mockResolvedValue([
+      'Invoices. Customers can review billing totals from Settings > Billing.',
+      'Taxes. Invoice totals may include taxes based on the billing profile.',
+    ]);
     prisma.message.findMany.mockResolvedValue([
       {
         channelId: 'chan-1',
@@ -109,6 +113,8 @@ describe('AiAssistantService', () => {
         conversation: {
           id: 'conv-1',
           subject: 'Invoice issue',
+          priority: 'NORMAL',
+          isEscalated: false,
           customer: {
             name: 'Taylor',
             email: 'taylor@example.com',
@@ -137,6 +143,13 @@ describe('AiAssistantService', () => {
       conversationId: 'conv-1',
       draft: 'assistant reply',
       generatedAt: expect.any(String),
+      confidence: 'MEDIUM',
+      confidenceHint: expect.any(String),
+    });
+    expect(knowledgeBase.retrieveRelevantSnippets).toHaveBeenCalledWith({
+      query: 'My invoice total looks wrong.',
+      conversationId: 'conv-1',
+      limit: 4,
     });
     expect(aiChat.chat).toHaveBeenCalledWith(
       expect.arrayContaining([

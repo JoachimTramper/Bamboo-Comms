@@ -172,9 +172,7 @@ function ChatPageContent() {
     return "chat";
   });
 
-  function replaceQueryParams(
-    updater: (params: URLSearchParams) => void,
-  ) {
+  function replaceQueryParams(updater: (params: URLSearchParams) => void) {
     const nextParams = new URLSearchParams(searchParams.toString());
     updater(nextParams);
 
@@ -219,6 +217,12 @@ function ChatPageContent() {
   const [assistantInstructions, setAssistantInstructions] = useState("");
   const [assistantDraft, setAssistantDraft] = useState("");
   const [assistantDraftAt, setAssistantDraftAt] = useState<string | null>(null);
+  const [assistantConfidence, setAssistantConfidence] = useState<
+    "HIGH" | "MEDIUM" | "LOW" | null
+  >(null);
+  const [assistantConfidenceHint, setAssistantConfidenceHint] = useState<
+    string | null
+  >(null);
   const [assistantLoading, setAssistantLoading] = useState(false);
   const [assistantError, setAssistantError] = useState<string | null>(null);
   const sortedConversations = [...conversations].sort((a, b) => {
@@ -328,8 +332,7 @@ function ChatPageContent() {
     if (!isAdmin) return;
 
     setConversationFilters({
-      status:
-        supportStatusFilter === "ALL" ? undefined : supportStatusFilter,
+      status: supportStatusFilter === "ALL" ? undefined : supportStatusFilter,
       priority:
         supportPriorityFilter === "ALL" ? undefined : supportPriorityFilter,
       assigneeId: supportAssignedToMeOnly ? user?.sub : undefined,
@@ -455,6 +458,8 @@ function ChatPageContent() {
     setConversationActionError(null);
     setAssistantDraft("");
     setAssistantDraftAt(null);
+    setAssistantConfidence(null);
+    setAssistantConfidenceHint(null);
     setAssistantError(null);
   }, [activeView, activeConversationId, active]);
 
@@ -464,7 +469,9 @@ function ChatPageContent() {
     setActiveConversation(nextConversation);
     setConversations((prev) =>
       prev.map((item) =>
-        item.id === nextConversation.id ? { ...item, ...nextConversation } : item,
+        item.id === nextConversation.id
+          ? { ...item, ...nextConversation }
+          : item,
       ),
     );
   }
@@ -477,7 +484,10 @@ function ChatPageContent() {
     try {
       setConversationActionError(null);
       setUpdatingStatus(true);
-      const updated = await transitionConversation(activeConversationId, action);
+      const updated = await transitionConversation(
+        activeConversationId,
+        action,
+      );
       syncConversationState(updated);
     } catch (e: any) {
       setConversationActionError(
@@ -496,7 +506,10 @@ function ChatPageContent() {
     try {
       setConversationActionError(null);
       setUpdatingAssignment(true);
-      const updated = await assignConversation(activeConversationId, assigneeId);
+      const updated = await assignConversation(
+        activeConversationId,
+        assigneeId,
+      );
       syncConversationState(updated);
     } catch (e: any) {
       setConversationActionError(
@@ -521,6 +534,8 @@ function ChatPageContent() {
       );
       setAssistantDraft(result.draft ?? "");
       setAssistantDraftAt(result.generatedAt ?? null);
+      setAssistantConfidence(result.confidence ?? null);
+      setAssistantConfidenceHint(result.confidenceHint ?? null);
     } catch (e: any) {
       setAssistantError(
         e?.response?.data?.message ?? e?.message ?? "Failed to generate draft",
@@ -531,14 +546,16 @@ function ChatPageContent() {
   }
 
   async function handleUpdateConversationPriority(
-    priority: Exclude<(typeof activeConversation), null>["priority"],
+    priority: Exclude<typeof activeConversation, null>["priority"],
   ) {
     if (!activeConversationId) return;
 
     try {
       setConversationActionError(null);
       setUpdatingPriority(true);
-      const updated = await updateConversation(activeConversationId, { priority });
+      const updated = await updateConversation(activeConversationId, {
+        priority,
+      });
       syncConversationState(updated);
     } catch (e: any) {
       setConversationActionError(
@@ -895,14 +912,14 @@ function ChatPageContent() {
                   dmPeer={dmPeer}
                 />
               </div>
-              ) : activeView === "chat" ? (
-                <div className="md:hidden absolute top-0 left-0 right-0 z-40">
-                  <ChatTitleBubble
-                    activeChannel={activeChannel}
-                    dmPeer={dmPeer}
-                  />
-                </div>
-              ) : null}
+            ) : activeView === "chat" ? (
+              <div className="md:hidden absolute top-0 left-0 right-0 z-40">
+                <ChatTitleBubble
+                  activeChannel={activeChannel}
+                  dmPeer={dmPeer}
+                />
+              </div>
+            ) : null}
 
             <div
               className={`h-full flex flex-col ${
@@ -941,6 +958,8 @@ function ChatPageContent() {
                 <SupportAssistantPanel
                   draft={assistantDraft}
                   generatedAt={assistantDraftAt}
+                  confidence={assistantConfidence}
+                  confidenceHint={assistantConfidenceHint}
                   instructions={assistantInstructions}
                   loading={assistantLoading}
                   error={assistantError}
@@ -950,6 +969,8 @@ function ChatPageContent() {
                   onClearDraft={() => {
                     setAssistantDraft("");
                     setAssistantDraftAt(null);
+                    setAssistantConfidence(null);
+                    setAssistantConfidenceHint(null);
                     setAssistantError(null);
                   }}
                 />
@@ -961,17 +982,18 @@ function ChatPageContent() {
                 </div>
               )}
 
-              {activeView === "support" && !activeConversationLoading && (
-                !activeConversation ? (
+              {activeView === "support" &&
+                !activeConversationLoading &&
+                (!activeConversation ? (
                   <div className="flex-1 grid place-items-center px-6 text-center text-sm text-neutral-500">
                     Select a support conversation from the inbox to view it.
                   </div>
                 ) : !supportChannelId ? (
                   <div className="flex-1 grid place-items-center px-6 text-center text-sm text-neutral-500">
-                    This conversation does not have a linked message channel yet.
+                    This conversation does not have a linked message channel
+                    yet.
                   </div>
-                ) : null
-              )}
+                ) : null)}
 
               {activeConversationLoading && activeView === "support" && (
                 <div className="flex-1 grid place-items-center px-6 text-sm text-neutral-500">
@@ -979,47 +1001,51 @@ function ChatPageContent() {
                 </div>
               )}
 
-              {(activeView === "chat" || showSupportThread) && messageChannelId && (
-                <MessageList
-                  msgs={msgs}
-                  meId={user.sub}
-                  channelId={messageChannelId}
-                  listRef={listRef}
-                  editingId={editingId}
-                  editText={editText}
-                  setEditText={setEditText}
-                  onStartEdit={(m) => startEdit(m)}
-                  onSaveEdit={(m) => saveEdit(m.id)}
-                  onCancelEdit={cancelEdit}
-                  onDelete={(m) => removeMessage(m.id)}
-                  onReply={(m) => handleReply(m)}
-                  formatDateTime={formatDateTime}
-                  onScroll={handleScroll}
-                  isDirect={
-                    activeView === "chat" ? (activeChannel?.isDirect ?? false) : false
-                  }
-                  lastReadMessageIdByOthers={lastReadMessageIdByOthers}
-                  scrollToMessageId={scrollToMessageId}
-                  onScrolledToMessage={() => setScrollToMessageId(null)}
-                  loadingOlder={loadingOlder}
-                  onRetrySend={retrySend}
-                />
-              )}
+              {(activeView === "chat" || showSupportThread) &&
+                messageChannelId && (
+                  <MessageList
+                    msgs={msgs}
+                    meId={user.sub}
+                    channelId={messageChannelId}
+                    listRef={listRef}
+                    editingId={editingId}
+                    editText={editText}
+                    setEditText={setEditText}
+                    onStartEdit={(m) => startEdit(m)}
+                    onSaveEdit={(m) => saveEdit(m.id)}
+                    onCancelEdit={cancelEdit}
+                    onDelete={(m) => removeMessage(m.id)}
+                    onReply={(m) => handleReply(m)}
+                    formatDateTime={formatDateTime}
+                    onScroll={handleScroll}
+                    isDirect={
+                      activeView === "chat"
+                        ? (activeChannel?.isDirect ?? false)
+                        : false
+                    }
+                    lastReadMessageIdByOthers={lastReadMessageIdByOthers}
+                    scrollToMessageId={scrollToMessageId}
+                    onScrolledToMessage={() => setScrollToMessageId(null)}
+                    loadingOlder={loadingOlder}
+                    onRetrySend={retrySend}
+                  />
+                )}
             </div>
           </div>
 
           <div className="absolute bottom-0 left-0 right-0 z-30">
             <TypingIndicator label={typingLabel} />
-            {(activeView === "chat" || showSupportThread) && messageChannelId && (
-              <Composer
-                value={text}
-                onChange={handleTypingInput}
-                onSend={handleSend}
-                replyTo={replyTo}
-                onCancelReply={() => setReplyTo(null)}
-                mentionCandidates={mentionCandidates}
-              />
-            )}
+            {(activeView === "chat" || showSupportThread) &&
+              messageChannelId && (
+                <Composer
+                  value={text}
+                  onChange={handleTypingInput}
+                  onSend={handleSend}
+                  replyTo={replyTo}
+                  onCancelReply={() => setReplyTo(null)}
+                  mentionCandidates={mentionCandidates}
+                />
+              )}
           </div>
         </main>
       </div>

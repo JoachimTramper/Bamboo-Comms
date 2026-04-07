@@ -154,6 +154,68 @@ export class AiAssistantService {
       .join('\n')}`;
   }
 
+  private determineDraftConfidence(input: {
+    knowledgeSnippetCount: number;
+    messageCount: number;
+    priority?: string | null;
+    isEscalated?: boolean;
+  }) {
+    let score = 1;
+    const reasons: string[] = [];
+
+    if (input.knowledgeSnippetCount >= 2) {
+      score += 2;
+      reasons.push('matched multiple knowledge snippets');
+    } else if (input.knowledgeSnippetCount === 1) {
+      score += 1;
+      reasons.push('matched one knowledge snippet');
+    } else {
+      reasons.push('no matching knowledge snippets were found');
+    }
+
+    if (input.messageCount >= 4) {
+      score += 1;
+      reasons.push('the conversation has enough message context');
+    } else {
+      reasons.push('the conversation context is still limited');
+    }
+
+    if (input.priority === 'URGENT') {
+      score -= 2;
+      reasons.push('the conversation is marked urgent');
+    } else if (input.priority === 'HIGH') {
+      score -= 1;
+      reasons.push('the conversation is marked high priority');
+    }
+
+    if (input.isEscalated) {
+      score -= 1;
+      reasons.push('the conversation is already escalated');
+    }
+
+    if (score >= 4) {
+      return {
+        level: 'HIGH' as const,
+        hint: `Higher confidence because ${reasons
+          .filter((reason) => !reason.startsWith('no matching') && !reason.startsWith('the conversation context is still limited'))
+          .slice(0, 2)
+          .join(' and ')}.`,
+      };
+    }
+
+    if (score >= 2) {
+      return {
+        level: 'MEDIUM' as const,
+        hint: `Moderate confidence because ${reasons.slice(0, 2).join(' and ')}.`,
+      };
+    }
+
+    return {
+      level: 'LOW' as const,
+      hint: `Lower confidence because ${reasons.slice(0, 2).join(' and ')}.`,
+    };
+  }
+
   private async assertCanAccessChannel(channelId: string, userId: string) {
     const ch = await this.prisma.channel.findUnique({
       where: { id: channelId },
@@ -206,6 +268,8 @@ export class AiAssistantService {
           select: {
             id: true,
             subject: true,
+            priority: true,
+            isEscalated: true,
             customer: {
               select: {
                 name: true,
@@ -240,6 +304,14 @@ export class AiAssistantService {
             message.content?.trim(),
         ) ??
       [...messages].reverse().find((message) => message.content?.trim());
+    const retrievedKnowledge = await this.knowledgeBase.retrieveRelevantSnippets({
+      query:
+        lastCustomerMessage?.content?.trim() ||
+        conversation?.subject?.trim() ||
+        'support reply',
+      conversationId,
+      limit: 4,
+    });
 
     const customerContext = [
       conversation?.customer?.name ?? conversation?.customer?.email ?? null,
@@ -269,12 +341,21 @@ export class AiAssistantService {
       content: prompt,
       history,
       lastRead: null,
+      knowledgeContext: retrievedKnowledge,
+    });
+    const confidence = this.determineDraftConfidence({
+      knowledgeSnippetCount: retrievedKnowledge.length,
+      messageCount: messages.length,
+      priority: conversation?.priority ?? null,
+      isEscalated: conversation?.isEscalated ?? false,
     });
 
     return {
       conversationId,
       draft: result?.reply ?? '',
       generatedAt: new Date().toISOString(),
+      confidence: confidence.level,
+      confidenceHint: confidence.hint,
     };
   }
 

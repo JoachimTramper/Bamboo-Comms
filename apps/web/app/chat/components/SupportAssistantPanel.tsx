@@ -5,6 +5,8 @@ import { useEffect, useState } from "react";
 type Props = {
   draft: string;
   generatedAt: string | null;
+  confidence?: "HIGH" | "MEDIUM" | "LOW" | null;
+  confidenceHint?: string | null;
   instructions: string;
   loading: boolean;
   error: string | null;
@@ -31,6 +33,8 @@ function formatGeneratedAt(value: string | null) {
 export function SupportAssistantPanel({
   draft,
   generatedAt,
+  confidence,
+  confidenceHint,
   instructions,
   loading,
   error,
@@ -42,6 +46,14 @@ export function SupportAssistantPanel({
 }: Props) {
   const generatedLabel = formatGeneratedAt(generatedAt);
   const [open, setOpen] = useState(defaultOpen);
+  const confidenceTone =
+    confidence === "HIGH"
+      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+      : confidence === "MEDIUM"
+        ? "border-amber-200 bg-amber-50 text-amber-700"
+        : confidence === "LOW"
+          ? "border-rose-200 bg-rose-50 text-rose-700"
+          : "border-neutral-200 bg-neutral-50 text-neutral-600";
 
   useEffect(() => {
     setOpen(defaultOpen || !!draft || !!error);
@@ -59,7 +71,7 @@ export function SupportAssistantPanel({
               Generate a customer reply draft for this support thread
             </div>
             <div className="mt-1 text-xs text-neutral-500">
-              The draft is never sent automatically. Review it before use.
+              Support-only drafting tool. Nothing is sent automatically.
             </div>
           </div>
 
@@ -77,13 +89,31 @@ export function SupportAssistantPanel({
               disabled={loading}
               className="rounded-full border border-indigo-200 bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {loading ? "Generating..." : "Generate Reply"}
+              {loading ? "Generating Reply..." : "Generate Reply"}
             </button>
           </div>
         </div>
 
         {open ? (
           <>
+            <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+              <span className="rounded-full border border-indigo-200 bg-white px-2.5 py-1 font-medium text-indigo-700">
+                Review before sending
+              </span>
+              {confidence ? (
+                <span
+                  className={`rounded-full border px-2.5 py-1 font-medium ${confidenceTone}`}
+                >
+                  Confidence: {confidence.toLowerCase()}
+                </span>
+              ) : null}
+              {generatedLabel ? (
+                <span className="text-neutral-500">
+                  Generated {generatedLabel}
+                </span>
+              ) : null}
+            </div>
+
             <div className="mt-3">
               <label className="block text-[11px] font-semibold uppercase tracking-[0.16em] text-neutral-500">
                 Optional guidance
@@ -97,6 +127,23 @@ export function SupportAssistantPanel({
               />
             </div>
 
+            {loading && (
+              <div className="mt-3 rounded-2xl border border-indigo-200 bg-indigo-50/80 px-4 py-3">
+                <div className="flex items-start gap-3">
+                  <div className="mt-1 h-2.5 w-2.5 animate-pulse rounded-full bg-indigo-500" />
+                  <div>
+                    <div className="text-sm font-medium text-indigo-900">
+                      Generating a reply draft
+                    </div>
+                    <div className="mt-1 text-sm text-indigo-700">
+                      Reviewing the conversation context and preparing text for
+                      the composer.
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {error && (
               <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
                 {error}
@@ -108,19 +155,28 @@ export function SupportAssistantPanel({
                 <div className="text-sm font-medium text-neutral-900">
                   Draft Reply
                 </div>
-                {generatedLabel && (
-                  <div className="text-xs text-neutral-500">
-                    Generated {generatedLabel}
-                  </div>
-                )}
+                <div className="text-xs text-neutral-500">Preview only</div>
               </div>
 
               {draft ? (
                 <>
-                  <div className="mt-3 whitespace-pre-wrap text-sm leading-6 text-neutral-700">
-                    {draft}
+                  {confidenceHint ? (
+                    <div
+                      className={`mt-3 rounded-xl border px-3 py-2 text-sm ${confidenceTone}`}
+                    >
+                      {confidenceHint}
+                    </div>
+                  ) : null}
+
+                  <div className="mt-3 rounded-2xl border border-neutral-200 bg-stone-50 px-4 py-3">
+                    <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-neutral-500">
+                      Draft preview
+                    </div>
+                    <div className="whitespace-pre-wrap text-sm leading-7 text-neutral-800">
+                      {draft}
+                    </div>
                   </div>
-                  <div className="mt-4 flex flex-wrap gap-2">
+                  <div className="mt-4 flex flex-wrap items-center gap-2">
                     <button
                       type="button"
                       onClick={onUseDraft}
@@ -136,10 +192,16 @@ export function SupportAssistantPanel({
                       Clear
                     </button>
                   </div>
+                  <div className="mt-2 text-xs text-neutral-500">
+                    Use Draft In Composer only copies the draft into the message
+                    composer. It does not send the message.
+                  </div>
                 </>
               ) : (
                 <div className="mt-3 text-sm text-neutral-500">
-                  Generate a draft to preview an AI-written reply for this conversation.
+                  {loading
+                    ? "The draft preview will appear here when generation finishes."
+                    : "Generate a draft to preview an AI-written reply for this conversation."}
                 </div>
               )}
             </div>

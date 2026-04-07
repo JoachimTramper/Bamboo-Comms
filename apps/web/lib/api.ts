@@ -445,6 +445,8 @@ export async function generateConversationDraft(
     conversationId: string;
     draft: string;
     generatedAt: string;
+    confidence?: "HIGH" | "MEDIUM" | "LOW";
+    confidenceHint?: string | null;
   };
 }
 
