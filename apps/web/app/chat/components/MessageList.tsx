@@ -72,19 +72,6 @@ export function MessageList({
     ? safeMsgs.findIndex((m) => m.id === lastReadMessageIdByOthers)
     : -1;
 
-  // latest message from me that is up to and including lastReadIndex
-  const lastMySeenIndex =
-    isDirect && lastReadIndex >= 0
-      ? (() => {
-          for (let i = lastReadIndex; i >= 0; i--) {
-            const msg = safeMsgs[i];
-            if (!msg) continue;
-            if (msg.authorId === meId) return i;
-          }
-          return -1;
-        })()
-      : -1;
-
   // latest message from me in this list
   const lastMyIndex =
     isDirect && safeMsgs.length > 0

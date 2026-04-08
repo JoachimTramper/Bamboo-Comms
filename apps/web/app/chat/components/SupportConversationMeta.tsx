@@ -23,16 +23,18 @@ function infoCard(
   title: string,
   value: string,
   hint?: string,
-  tone: "neutral" | "sky" | "amber" | "indigo" = "neutral",
+  tone: "neutral" | "sky" | "amber" | "indigo" | "violet" = "neutral",
 ) {
   const toneClass =
     tone === "sky"
       ? "border-sky-200 bg-sky-50/80"
       : tone === "amber"
         ? "border-amber-200 bg-amber-50/80"
+        : tone === "violet"
+          ? "border-violet-200 bg-violet-50/80"
         : tone === "indigo"
           ? "border-indigo-200 bg-indigo-50/80"
-          : "border-neutral-200 bg-white/90";
+          : "border-slate-200 bg-slate-50/80";
 
   return (
     <div className={`rounded-xl border px-3 py-2.5 shadow-sm ${toneClass}`}>
@@ -65,7 +67,7 @@ export function SupportConversationMeta({ conversation }: Props) {
     : "No agent is assigned yet";
 
   return (
-    <div className="border-b border-slate-200 bg-stone-50/90 px-4 py-2.5 sm:px-5">
+    <div className="border-b border-slate-200 bg-[linear-gradient(180deg,rgba(248,250,252,0.96),rgba(245,245,244,0.9))] px-4 py-2.5 backdrop-blur-sm sm:px-5">
       <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-4">
         {infoCard("Customer", customerName, customerHint, "indigo")}
         {infoCard("Assignee", assigneeLabel, assigneeHint, "sky")}
@@ -73,7 +75,7 @@ export function SupportConversationMeta({ conversation }: Props) {
           "Latest Activity",
           formatDate(conversation.lastMessageAt),
           `${conversation.messageCount} messages`,
-          "neutral",
+          "violet",
         )}
         {infoCard(
           "First Response",

@@ -110,7 +110,9 @@ export function useTyping(scope: TypingScope, myId?: string) {
           conversationId: next.conversationId ?? undefined,
           isTyping: false,
         });
-      } catch {}
+      } catch {
+        // Socket may disconnect between start/stop typing events.
+      }
     }, 1500);
   };
 

@@ -1,6 +1,6 @@
 "use client";
 import React, { useMemo, useState, useRef } from "react";
-import { Paperclip, X } from "lucide-react";
+import { Paperclip } from "lucide-react";
 
 type ReplyTarget = {
   id: string;

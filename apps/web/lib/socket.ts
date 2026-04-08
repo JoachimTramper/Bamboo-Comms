@@ -44,7 +44,7 @@ export function getSocket(): Socket {
     console.warn("[socket] connect_error:", err?.message);
   });
 
-  socket.on("disconnect", (reason) => {});
+  socket.on("disconnect", () => {});
 
   // Always update auth token before automatic reconnects
   socket.io.on("reconnect_attempt", () => {
@@ -59,12 +59,14 @@ export function getSocket(): Socket {
  * - Disconnects the existing socket so React hooks can re-register listeners.
  * - Token storage (sessionStorage) is managed in api.ts:setToken.
  */
-export function refreshSocketAuth(_newToken: string | null) {
+export function refreshSocketAuth(_token?: string | null) {
   if (socket) {
     try {
       socket.off(); // remove all listeners
       socket.disconnect(); // close the current connection
-    } catch {}
+    } catch {
+      // Ignore teardown failures during auth transitions.
+    }
     socket = null;
   }
   // No token writing here; api.ts handles that.

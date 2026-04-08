@@ -60,7 +60,7 @@ export function SupportAssistantPanel({
   }, [defaultOpen, draft, error]);
 
   return (
-    <div className="border-b border-slate-200 bg-white/90 px-4 py-2.5 sm:px-5">
+    <div className="border-b border-slate-200 bg-[linear-gradient(180deg,rgba(248,250,252,0.96),rgba(245,245,244,0.9))] px-4 py-2.5 backdrop-blur-sm sm:px-5">
       <div className="rounded-2xl border border-indigo-200 bg-[linear-gradient(135deg,rgba(224,231,255,0.9),rgba(255,255,255,0.98))] px-4 py-3 shadow-sm">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1">

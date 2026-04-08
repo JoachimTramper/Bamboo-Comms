@@ -82,6 +82,9 @@ export function ConversationControls({
   );
   const [open, setOpen] = useState(false);
   const statusActions = nextActionsForStatus(conversation.status);
+  const firstResponseToneClass = conversation.resolvedAt
+    ? "border-sky-200 bg-sky-50/80"
+    : "border-amber-200 bg-amber-50/80";
   const assignmentOptions = [
     { value: "", label: "Unassigned" },
     { value: me.id, label: `${me.displayName} (Me)` },
@@ -110,8 +113,8 @@ export function ConversationControls({
   }, [conversation.id]);
 
   return (
-    <div className="border-b border-slate-200 bg-white/85 px-4 py-2.5 backdrop-blur-sm">
-      <div className="rounded-3xl border border-slate-200 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(244,244,245,0.92))] p-4 shadow-sm">
+    <div className="border-b border-slate-200 bg-[linear-gradient(180deg,rgba(248,250,252,0.96),rgba(245,245,244,0.9))] px-4 py-2.5 backdrop-blur-sm sm:px-5">
+      <div className="rounded-3xl border border-slate-200/90 bg-[linear-gradient(90deg,rgba(226,232,240,0.82),rgba(243,244,246,0.94)_52%,rgba(255,255,255,0.98))] p-4 shadow-sm">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
             <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-neutral-500">
@@ -144,7 +147,7 @@ export function ConversationControls({
         {open ? (
           <>
             <div className="mt-4 grid gap-4 lg:grid-cols-1 xl:grid-cols-2">
-              <div className="rounded-2xl border border-indigo-200 bg-indigo-50/55 p-4 shadow-sm">
+              <div className="rounded-2xl border border-indigo-200 bg-indigo-50/40 p-4 shadow-sm">
                 {sectionLabel(
                   "Workflow",
                   "Status transitions continue to follow the backend lifecycle rules.",
@@ -170,7 +173,7 @@ export function ConversationControls({
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-sky-200 bg-sky-50/55 p-4 shadow-sm">
+              <div className="rounded-2xl border border-sky-200 bg-sky-50/40 p-4 shadow-sm">
                 {sectionLabel(
                   "Assignment",
                   "Improved incrementally with a compact assignee selector and quick actions.",
@@ -222,7 +225,7 @@ export function ConversationControls({
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-amber-200 bg-amber-50/55 p-4 shadow-sm">
+              <div className="rounded-2xl border border-violet-200 bg-violet-50/40 p-4 shadow-sm">
                 {sectionLabel(
                   "Priority",
                   "Priority updates are persisted immediately on the conversation.",
@@ -237,7 +240,9 @@ export function ConversationControls({
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-violet-200 bg-violet-50/55 p-4 shadow-sm">
+              <div
+                className={`rounded-2xl border p-4 shadow-sm ${firstResponseToneClass}`}
+              >
                 {sectionLabel(
                   "Tags",
                   "Use lightweight tags to classify the thread without changing chat behavior.",
@@ -252,7 +257,7 @@ export function ConversationControls({
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-rose-200 bg-rose-50/55 p-4 shadow-sm xl:col-span-2">
+              <div className="rounded-2xl border border-rose-200 bg-rose-50/40 p-4 shadow-sm xl:col-span-2">
                 {sectionLabel(
                   "Escalation",
                   "Manual human handoff flag for cases that need extra review. No automatic routing or notifications yet.",

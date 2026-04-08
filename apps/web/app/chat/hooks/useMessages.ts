@@ -110,7 +110,9 @@ export function useMessages(
       s.off("connect", join);
       try {
         s.emit("channel.leave", { channelId: active });
-      } catch {}
+      } catch {
+        // Socket can already be closed during channel switches.
+      }
     };
   }, [ready, active]);
 
@@ -127,7 +129,9 @@ export function useMessages(
       s.off("connect", join);
       try {
         s.emit("conversation.leave", { conversationId });
-      } catch {}
+      } catch {
+        // Socket can already be closed during conversation switches.
+      }
     };
   }, [ready, conversationId]);
 
@@ -311,12 +315,14 @@ export function useMessages(
     await send(
       failed.content ?? undefined,
       failed.parent?.id,
-      failed.mentions?.map((mm: any) => mm.userId) ?? [],
-      (failed.attachments ?? []).map((a: any) => ({
-        url: a.url,
-        fileName: a.fileName,
-        mimeType: a.mimeType,
-        size: a.size,
+      failed.mentions?.flatMap((mention) =>
+        mention.userId ? [mention.userId] : [],
+      ) ?? [],
+      (failed.attachments ?? []).map((attachment) => ({
+        url: attachment.url,
+        fileName: attachment.fileName,
+        mimeType: attachment.mimeType,
+        size: attachment.size,
       })),
     );
   };

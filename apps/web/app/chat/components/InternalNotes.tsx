@@ -13,6 +13,33 @@ type Props = {
   disabled?: boolean;
 };
 
+function getErrorMessage(error: unknown, fallback: string) {
+  if (typeof error === "object" && error !== null) {
+    const maybeResponse = "response" in error ? error.response : undefined;
+    if (
+      typeof maybeResponse === "object" &&
+      maybeResponse !== null &&
+      "data" in maybeResponse
+    ) {
+      const maybeData = maybeResponse.data;
+      if (
+        typeof maybeData === "object" &&
+        maybeData !== null &&
+        "message" in maybeData &&
+        typeof maybeData.message === "string"
+      ) {
+        return maybeData.message;
+      }
+    }
+
+    if ("message" in error && typeof error.message === "string") {
+      return error.message;
+    }
+  }
+
+  return fallback;
+}
+
 function formatTimestamp(value: string) {
   try {
     return new Intl.DateTimeFormat(undefined, {
@@ -56,13 +83,9 @@ export function InternalNotes({ conversationId, disabled = false }: Props) {
         if (!cancelled) {
           setNotes(items);
         }
-      } catch (e: any) {
+      } catch (error) {
         if (!cancelled) {
-          setError(
-            e?.response?.data?.message ??
-              e?.message ??
-              "Failed to load internal notes",
-          );
+          setError(getErrorMessage(error, "Failed to load internal notes"));
         }
       } finally {
         if (!cancelled) {
@@ -86,12 +109,8 @@ export function InternalNotes({ conversationId, disabled = false }: Props) {
       const created = await createInternalNote(conversationId, content);
       setNotes((prev) => [created, ...prev]);
       setDraft("");
-    } catch (e: any) {
-      setError(
-        e?.response?.data?.message ??
-          e?.message ??
-          "Failed to create internal note",
-      );
+    } catch (error) {
+      setError(getErrorMessage(error, "Failed to create internal note"));
     } finally {
       setSaving(false);
     }
@@ -103,12 +122,8 @@ export function InternalNotes({ conversationId, disabled = false }: Props) {
       setError(null);
       await deleteInternalNote(conversationId, noteId);
       setNotes((prev) => prev.filter((note) => note.id !== noteId));
-    } catch (e: any) {
-      setError(
-        e?.response?.data?.message ??
-          e?.message ??
-          "Failed to delete internal note",
-      );
+    } catch (error) {
+      setError(getErrorMessage(error, "Failed to delete internal note"));
     } finally {
       setDeletingId(null);
     }

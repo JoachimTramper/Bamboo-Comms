@@ -200,7 +200,7 @@ export function Sidebar({
             ) : (
               dmChannels.map((c) => {
                 // Other person in the DM channel (not myself)
-                let other =
+                const other =
                   c.members && c.members.length > 0
                     ? (c.members.find((m) => m.id !== meId) ?? c.members[0])
                     : undefined;

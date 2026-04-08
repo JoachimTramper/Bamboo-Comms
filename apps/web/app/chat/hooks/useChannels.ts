@@ -8,8 +8,10 @@ import {
   getOrCreateDirectChannel,
   createChannel,
 } from "@/lib/api";
-import type { ChannelWithUnread, Me } from "../types";
+import type { Channel, ChannelWithUnread, Me } from "../types";
 import { mergeChannelsById } from "../utils/utils";
+
+type ChannelMember = NonNullable<Channel["members"]>[number];
 
 export function useChannels(user: Me | null) {
   const [channels, setChannels] = useState<ChannelWithUnread[]>([]);
@@ -53,7 +55,9 @@ export function useChannels(user: Me | null) {
       try {
         const dms = await listDirectChannels();
         const normalized = dms.map((dm) => {
-          const other = dm.members?.find((m: any) => m.id !== user.sub);
+          const other = dm.members?.find(
+            (member: ChannelMember) => member.id !== user.sub,
+          );
           return {
             id: dm.id,
             name: other?.displayName || dm.name || "Direct",
@@ -104,7 +108,9 @@ export function useChannels(user: Me | null) {
     if (!user) return;
     try {
       const dm = await getOrCreateDirectChannel(otherUserId);
-      const other = dm.members?.find((m: any) => m.id !== user.sub);
+      const other = dm.members?.find(
+        (member: ChannelMember) => member.id !== user.sub,
+      );
       const label = other?.displayName || dm.name || "Direct";
 
       setChannels((prev) =>
