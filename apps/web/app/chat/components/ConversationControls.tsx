@@ -38,9 +38,15 @@ function nextActionsForStatus(
 ): Array<{ label: string; action: ConversationLifecycleAction }> {
   switch (status) {
     case "OPEN":
-      return [{ label: "Mark Pending", action: "PENDING" }];
+      return [
+        { label: "Mark Pending", action: "PENDING" },
+        { label: "Close", action: "CLOSE" },
+      ];
     case "PENDING":
-      return [{ label: "Resolve", action: "RESOLVE" }];
+      return [
+        { label: "Resolve", action: "RESOLVE" },
+        { label: "Close", action: "CLOSE" },
+      ];
     case "RESOLVED":
       return [
         { label: "Close", action: "CLOSE" },

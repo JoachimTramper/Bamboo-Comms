@@ -127,6 +127,40 @@ describe('ConversationsService', () => {
     expect(prisma.conversation.update).not.toHaveBeenCalled();
   });
 
+  it('allows admins to close an open conversation through the status endpoint', async () => {
+    prisma.conversation.findUnique.mockResolvedValueOnce({
+      ...conversationRecord,
+      status: ConversationStatus.OPEN,
+    });
+    prisma.conversation.update.mockResolvedValue({
+      ...conversationRecord,
+      status: ConversationStatus.CLOSED,
+    });
+
+    const result = await service.updateConversationStatus(
+      'conv-1',
+      ConversationStatus.CLOSED,
+    );
+
+    expect(prisma.conversation.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'conv-1' },
+        data: expect.objectContaining({
+          status: ConversationStatus.CLOSED,
+          resolvedAt: null,
+        }),
+      }),
+    );
+    expect(realtime.emitConversationStatusUpdated).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'conv-1',
+        status: ConversationStatus.CLOSED,
+        previousStatus: ConversationStatus.OPEN,
+      }),
+    );
+    expect(result.status).toBe(ConversationStatus.CLOSED);
+  });
+
   it('requires assignees to be agent users', async () => {
     prisma.conversation.findUnique.mockResolvedValue({
       ...conversationRecord,
@@ -359,6 +393,7 @@ describe('ConversationsService', () => {
       email: 'customer@example.com',
       displayName: 'Customer User',
     });
+    prisma.conversation.findFirst.mockResolvedValue(null);
     prisma.user.findMany.mockResolvedValue([{ id: 'agent-1' }]);
     prisma.customer.findUnique.mockResolvedValue({ id: 'cust-1' });
     prisma.customer.upsert.mockResolvedValue({ id: 'cust-1' });
@@ -465,6 +500,31 @@ describe('ConversationsService', () => {
       }),
     );
     expect(result.customerId).toBe('cust-1');
+  });
+
+  it('blocks customers from creating a second open support conversation', async () => {
+    prisma.user.findUnique.mockResolvedValue({
+      email: 'customer@example.com',
+      displayName: 'Customer User',
+    });
+    prisma.customer.upsert.mockResolvedValue({ id: 'cust-1' });
+    prisma.conversation.findFirst.mockResolvedValue({ id: 'conv-open-1' });
+
+    await expect(
+      service.createCustomerConversation(
+        {
+          sub: 'user-1',
+          email: 'customer@example.com',
+          subjectType: 'user',
+        },
+        { message: 'I need another thread.' },
+      ),
+    ).rejects.toThrow(
+      'You already have an open support conversation. Please use the existing thread before starting another.',
+    );
+
+    expect(prisma.conversation.create).not.toHaveBeenCalled();
+    expect(messages.createCustomerConversationSeedMessage).not.toHaveBeenCalled();
   });
 
   it('returns only the current customer conversations for non-admin users', async () => {

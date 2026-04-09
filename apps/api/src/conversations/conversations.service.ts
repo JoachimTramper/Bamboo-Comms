@@ -29,10 +29,15 @@ const ALLOWED_FORWARD_STATUS_TRANSITIONS: Record<
   ConversationStatus,
   ConversationStatus[]
 > = {
-  [ConversationStatus.OPEN]: [ConversationStatus.OPEN, ConversationStatus.PENDING],
+  [ConversationStatus.OPEN]: [
+    ConversationStatus.OPEN,
+    ConversationStatus.PENDING,
+    ConversationStatus.CLOSED,
+  ],
   [ConversationStatus.PENDING]: [
     ConversationStatus.PENDING,
     ConversationStatus.RESOLVED,
+    ConversationStatus.CLOSED,
   ],
   [ConversationStatus.RESOLVED]: [
     ConversationStatus.RESOLVED,
@@ -139,7 +144,12 @@ export class ConversationsService {
       data: {
         status: params.nextStatus,
         resolvedAt:
-          params.nextStatus === ConversationStatus.RESOLVED ? new Date() : null,
+          params.nextStatus === ConversationStatus.RESOLVED
+            ? new Date()
+            : params.nextStatus === ConversationStatus.CLOSED &&
+                params.previousStatus === ConversationStatus.RESOLVED
+              ? undefined
+              : null,
       },
       include: CONVERSATION_WITH_PREVIEW_INCLUDE,
     });
@@ -151,6 +161,22 @@ export class ConversationsService {
     });
 
     return serialized;
+  }
+
+  private async assertCustomerCanCreateOpenConversation(customerId: string) {
+    const existingOpenConversation = await this.prisma.conversation.findFirst({
+      where: {
+        customerId,
+        status: ConversationStatus.OPEN,
+      },
+      select: { id: true },
+    });
+
+    if (existingOpenConversation) {
+      throw new BadRequestException(
+        'You already have an open support conversation. Please use the existing thread before starting another.',
+      );
+    }
   }
 
   private async maybeApplyUrgentAssignmentHook(params: {
@@ -428,6 +454,7 @@ export class ConversationsService {
     }
 
     const customerId = await this.resolveCustomerIdForActor(actor);
+    await this.assertCustomerCanCreateOpenConversation(customerId);
     const subject =
       dto.subject?.trim() || `Support request from ${actor.email ?? 'customer'}`;
 

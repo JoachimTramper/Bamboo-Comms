@@ -239,6 +239,10 @@ function ChatPageContent() {
     const right = new Date(getLatestConversationActivityAt(b)).getTime();
     return right - left;
   });
+  const existingOpenSupportConversation = !isAdmin
+    ? conversations.find((conversation) => conversation.status === "OPEN") ??
+      null
+    : null;
 
   useMobileSidebar(sidebarOpen, setSidebarOpen);
 
@@ -580,6 +584,20 @@ function ChatPageContent() {
     }
   }
 
+  function handleOpenSupportCreate() {
+    if (existingOpenSupportConversation) {
+      setSupportCreateError(
+        "You already have an open support conversation. Please use the existing thread before starting another.",
+      );
+      setActiveConversationId(existingOpenSupportConversation.id);
+      setActiveView("support");
+      return;
+    }
+
+    setSupportCreateError(null);
+    setSupportCreateModalOpen(true);
+  }
+
   async function handleUpdateConversationPriority(
     priority: Exclude<typeof activeConversation, null>["priority"],
   ) {
@@ -881,16 +899,15 @@ function ChatPageContent() {
             onCreateSupportConversation={
               user.role === "ADMIN"
                 ? undefined
-                : () => {
-                    setSupportCreateError(null);
-                    setSupportCreateModalOpen(true);
-                  }
+                : handleOpenSupportCreate
             }
+            supportCreateError={supportCreateError}
             conversations={sortedConversations}
             activeConversationId={
               activeView === "support" ? activeConversationId : null
             }
             onSelectConversation={(conversationId) => {
+              setSupportCreateError(null);
               setActiveView("support");
               setActiveConversationId(conversationId);
               setSidebarOpen(false);
