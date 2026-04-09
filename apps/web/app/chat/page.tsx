@@ -12,6 +12,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import {
   assignConversation,
+  createCustomerSupportConversation,
   generateConversationDraft,
   transitionConversation,
   updateConversation,
@@ -48,6 +49,7 @@ import { SupportConversationHeader } from "./components/SupportConversationHeade
 import { SupportConversationMeta } from "./components/SupportConversationMeta";
 import { SupportAssistantPanel } from "./components/SupportAssistantPanel";
 import { ConversationControls } from "./components/ConversationControls";
+import { SupportConversationCreateModal } from "./components/SupportConversationCreateModal";
 
 import { useMessages } from "./hooks/useMessages";
 import { useTyping } from "./hooks/useTyping";
@@ -144,6 +146,7 @@ function ChatPageContent() {
   } = useChannels(user);
 
   const isAdmin = user?.role === "ADMIN";
+  const supportEnabled = !!user;
   const supportConversationParam = searchParams.get("supportConversation");
   const {
     setFilters: setConversationFilters,
@@ -155,7 +158,7 @@ function ChatPageContent() {
     setActiveConversation,
     loadingList: conversationsLoading,
     loadingActive: activeConversationLoading,
-  } = useConversations(!!isAdmin, supportConversationParam);
+  } = useConversations(supportEnabled, supportConversationParam);
   const supportStatusFilter = parseSupportStatus(
     searchParams.get("supportStatus"),
   );
@@ -225,6 +228,12 @@ function ChatPageContent() {
   >(null);
   const [assistantLoading, setAssistantLoading] = useState(false);
   const [assistantError, setAssistantError] = useState<string | null>(null);
+  const [creatingSupportConversation, setCreatingSupportConversation] =
+    useState(false);
+  const [supportCreateModalOpen, setSupportCreateModalOpen] = useState(false);
+  const [supportCreateError, setSupportCreateError] = useState<string | null>(
+    null,
+  );
   const sortedConversations = [...conversations].sort((a, b) => {
     const left = new Date(getLatestConversationActivityAt(a)).getTime();
     const right = new Date(getLatestConversationActivityAt(b)).getTime();
@@ -330,7 +339,6 @@ function ChatPageContent() {
 
   useEffect(() => {
     if (!isAdmin) return;
-
     setConversationFilters({
       status: supportStatusFilter === "ALL" ? undefined : supportStatusFilter,
       priority:
@@ -347,8 +355,6 @@ function ChatPageContent() {
   ]);
 
   useEffect(() => {
-    if (!isAdmin) return;
-
     const queryView = searchParams.get("view");
     if (queryView === "support" || supportConversationParam) {
       setActiveView("support");
@@ -358,10 +364,9 @@ function ChatPageContent() {
     if (queryView === "chat") {
       setActiveView("chat");
     }
-  }, [isAdmin, searchParams, supportConversationParam]);
+  }, [searchParams, supportConversationParam]);
 
   useEffect(() => {
-    if (!isAdmin) return;
     if (!conversations.length) return;
     if (!supportConversationParam) return;
     if (!conversations.some((item) => item.id === supportConversationParam)) {
@@ -378,7 +383,6 @@ function ChatPageContent() {
   }, [
     activeConversationId,
     conversations,
-    isAdmin,
     setActiveConversationId,
     supportConversationParam,
   ]);
@@ -542,6 +546,37 @@ function ChatPageContent() {
       );
     } finally {
       setAssistantLoading(false);
+    }
+  }
+
+  async function handleCreateSupportConversation(input: {
+    subject?: string;
+    message: string;
+  }) {
+    try {
+      setSupportCreateError(null);
+      setCreatingSupportConversation(true);
+      const conversation = await createCustomerSupportConversation(input);
+      setConversations((prev) =>
+        prev.some((item) => item.id === conversation.id)
+          ? prev.map((item) =>
+              item.id === conversation.id ? { ...item, ...conversation } : item,
+            )
+          : [conversation, ...prev],
+      );
+      setActiveConversation(conversation);
+      setActiveConversationId(conversation.id);
+      setActiveView("support");
+      setSupportCreateModalOpen(false);
+    } catch (error: any) {
+      console.error("Failed to create support conversation:", error);
+      setSupportCreateError(
+        error?.response?.data?.message ??
+          error?.message ??
+          "Failed to create support conversation.",
+      );
+    } finally {
+      setCreatingSupportConversation(false);
     }
   }
 
@@ -842,6 +877,15 @@ function ChatPageContent() {
             formatLastOnline={formatLastOnline}
             meId={user.sub}
             isAdmin={user.role === "ADMIN"}
+            creatingSupportConversation={creatingSupportConversation}
+            onCreateSupportConversation={
+              user.role === "ADMIN"
+                ? undefined
+                : () => {
+                    setSupportCreateError(null);
+                    setSupportCreateModalOpen(true);
+                  }
+            }
             conversations={sortedConversations}
             activeConversationId={
               activeView === "support" ? activeConversationId : null
@@ -980,44 +1024,48 @@ function ChatPageContent() {
                       <>
                         <SupportConversationHeader conversation={activeConversation} />
                         <SupportConversationMeta conversation={activeConversation} />
-                        <ConversationControls
-                          conversation={activeConversation}
-                          me={{ id: user.sub, displayName: user.displayName }}
-                          canManage={user.role === "ADMIN"}
-                          updatingStatus={updatingStatus}
-                          updatingAssignment={updatingAssignment}
-                          updatingPriority={updatingPriority}
-                          updatingTags={updatingTags}
-                          updatingEscalation={updatingEscalation}
-                          onTransition={handleTransitionConversation}
-                          onAssign={handleAssignConversation}
-                          onPriorityChange={handleUpdateConversationPriority}
-                          onTagsChange={handleUpdateConversationTags}
-                          onEscalationChange={handleUpdateConversationEscalation}
-                        />
-                        <SupportAssistantPanel
-                          draft={assistantDraft}
-                          generatedAt={assistantDraftAt}
-                          confidence={assistantConfidence}
-                          confidenceHint={assistantConfidenceHint}
-                          instructions={assistantInstructions}
-                          loading={assistantLoading}
-                          error={assistantError}
-                          onInstructionsChange={setAssistantInstructions}
-                          onGenerate={handleGenerateDraft}
-                          onUseDraft={handleUseDraft}
-                          onClearDraft={() => {
-                            setAssistantDraft("");
-                            setAssistantDraftAt(null);
-                            setAssistantConfidence(null);
-                            setAssistantConfidenceHint(null);
-                            setAssistantError(null);
-                          }}
-                        />
-                        {conversationActionError && (
-                          <div className="border-b border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700">
-                            {conversationActionError}
-                          </div>
+                        {user.role === "ADMIN" && (
+                          <>
+                            <ConversationControls
+                              conversation={activeConversation}
+                              me={{ id: user.sub, displayName: user.displayName }}
+                              canManage={user.role === "ADMIN"}
+                              updatingStatus={updatingStatus}
+                              updatingAssignment={updatingAssignment}
+                              updatingPriority={updatingPriority}
+                              updatingTags={updatingTags}
+                              updatingEscalation={updatingEscalation}
+                              onTransition={handleTransitionConversation}
+                              onAssign={handleAssignConversation}
+                              onPriorityChange={handleUpdateConversationPriority}
+                              onTagsChange={handleUpdateConversationTags}
+                              onEscalationChange={handleUpdateConversationEscalation}
+                            />
+                            <SupportAssistantPanel
+                              draft={assistantDraft}
+                              generatedAt={assistantDraftAt}
+                              confidence={assistantConfidence}
+                              confidenceHint={assistantConfidenceHint}
+                              instructions={assistantInstructions}
+                              loading={assistantLoading}
+                              error={assistantError}
+                              onInstructionsChange={setAssistantInstructions}
+                              onGenerate={handleGenerateDraft}
+                              onUseDraft={handleUseDraft}
+                              onClearDraft={() => {
+                                setAssistantDraft("");
+                                setAssistantDraftAt(null);
+                                setAssistantConfidence(null);
+                                setAssistantConfidenceHint(null);
+                                setAssistantError(null);
+                              }}
+                            />
+                            {conversationActionError && (
+                              <div className="border-b border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700">
+                                {conversationActionError}
+                              </div>
+                            )}
+                          </>
                         )}
                       </>
                     ) : null
@@ -1054,6 +1102,18 @@ function ChatPageContent() {
           setSearchOpen(false);
           setScrollToMessageId(messageId);
         }}
+      />
+
+      <SupportConversationCreateModal
+        open={supportCreateModalOpen}
+        loading={creatingSupportConversation}
+        error={supportCreateError}
+        onClose={() => {
+          if (creatingSupportConversation) return;
+          setSupportCreateModalOpen(false);
+          setSupportCreateError(null);
+        }}
+        onSubmit={handleCreateSupportConversation}
       />
     </div>
   );

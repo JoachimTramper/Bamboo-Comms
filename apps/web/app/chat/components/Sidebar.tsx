@@ -26,6 +26,8 @@ type Props = {
   formatLastOnline: (d?: string | null) => string;
   meId: string;
   isAdmin: boolean;
+  creatingSupportConversation?: boolean;
+  onCreateSupportConversation?: () => Promise<void> | void;
   conversations?: SupportConversation[];
   activeConversationId?: string | null;
   onSelectConversation?: (conversationId: string) => void;
@@ -55,6 +57,8 @@ export function Sidebar({
   formatLastOnline,
   meId,
   isAdmin,
+  creatingSupportConversation = false,
+  onCreateSupportConversation,
   conversations = [],
   activeConversationId = null,
   onSelectConversation,
@@ -96,7 +100,28 @@ export function Sidebar({
     <aside className="min-h-0 overflow-auto p-3">
       {/* Channels + DMs */}
       <div className="space-y-3">
-        {isAdmin && onSelectConversation && (
+        {!isAdmin && onCreateSupportConversation && (
+          <section className="rounded-2xl border border-indigo-200 bg-indigo-50/70 p-3 shadow-sm">
+            <div className="text-sm font-semibold text-neutral-900">
+              Need support?
+            </div>
+            <div className="mt-1 text-xs leading-5 text-neutral-600">
+              Create a support conversation so the admin inbox can pick it up.
+            </div>
+            <button
+              type="button"
+              onClick={onCreateSupportConversation}
+              disabled={creatingSupportConversation}
+              className="mt-3 inline-flex w-full items-center justify-center rounded-xl border border-indigo-200 bg-white px-3 py-2 text-sm font-medium text-indigo-700 transition-colors hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {creatingSupportConversation
+                ? "Creating..."
+                : "Start Support Conversation"}
+            </button>
+          </section>
+        )}
+
+        {onSelectConversation && (isAdmin || conversations.length > 0) && (
           <SupportInboxList
             conversations={conversations}
             activeConversationId={activeConversationId}
@@ -108,6 +133,13 @@ export function Sidebar({
             onPriorityFilterChange={onSupportPriorityFilterChange ?? (() => {})}
             onAssignedToMeOnlyChange={
               onSupportAssignedToMeOnlyChange ?? (() => {})
+            }
+            title={isAdmin ? "Support Inbox" : "My Support"}
+            showFilters={isAdmin}
+            emptyStateMessage={
+              isAdmin
+                ? "No support conversations match the current filters."
+                : "You have not started any support conversations yet."
             }
             loading={conversationsLoading}
           />

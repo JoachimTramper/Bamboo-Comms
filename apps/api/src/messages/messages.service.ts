@@ -13,6 +13,11 @@ import { AiAssistantService } from '../ai-assistant/ai-assistant.service';
 import type { AuthPrincipal } from '../auth/auth.types';
 import { AI_BOT_NAME } from '../bot/ai-bot.constants';
 import { formatHistoryLine } from '../bot/ai-bot.format';
+import { ConversationsRealtime } from '../conversations/conversations.realtime';
+import {
+  CONVERSATION_WITH_PREVIEW_INCLUDE,
+  serializeConversationWithPreview,
+} from '../conversations/conversation-serialization';
 
 const MAX_MESSAGE_LEN = 5000;
 
@@ -23,6 +28,7 @@ export class MessagesService {
     private rt: MessagesRealtime,
     private bot: MessagesBotOrchestrator,
     private assistant: AiAssistantService,
+    private conversationsRealtime: ConversationsRealtime,
   ) {}
 
   // ---------------------------
@@ -207,6 +213,7 @@ export class MessagesService {
     conversationId?: string | null;
     messageType: MessageContextType;
     createdAt: Date;
+    memberUserIds?: string[];
   }) {
     if (!params.conversationId) return;
 
@@ -239,10 +246,18 @@ export class MessagesService {
       }
     }
 
-    await this.prisma.conversation.update({
+    const conversation = await this.prisma.conversation.update({
       where: { id: params.conversationId },
       data: update,
+      include: CONVERSATION_WITH_PREVIEW_INCLUDE,
     });
+
+    if (!conversation) return;
+
+    this.conversationsRealtime.emitConversationUpdated(
+      serializeConversationWithPreview(conversation),
+      params.memberUserIds ?? [],
+    );
   }
 
   private async buildConversationHistoryForAssistant(
@@ -462,6 +477,60 @@ export class MessagesService {
     }[] = [],
     lastReadOverride?: string | null,
   ) {
+    return this.createInternal(
+      channelId,
+      actor,
+      content,
+      conversationId,
+      messageType,
+      replyToMessageId,
+      mentionUserIds,
+      attachments,
+      lastReadOverride,
+      false,
+    );
+  }
+
+  async createCustomerConversationSeedMessage(
+    channelId: string,
+    actor: AuthPrincipal,
+    content: string,
+    conversationId: string,
+  ) {
+    return this.createInternal(
+      channelId,
+      {
+        ...actor,
+        subjectType: 'customer',
+      },
+      content,
+      conversationId,
+      MessageContextType.CUSTOMER,
+      undefined,
+      [],
+      [],
+      null,
+      true,
+    );
+  }
+
+  private async createInternal(
+    channelId: string,
+    actor: AuthPrincipal,
+    content?: string,
+    conversationId?: string,
+    messageType?: MessageContextType,
+    replyToMessageId?: string,
+    mentionUserIds: string[] = [],
+    attachments: {
+      url: string;
+      fileName: string;
+      mimeType: string;
+      size: number;
+    }[] = [],
+    lastReadOverride?: string | null,
+    suppressConversationAssistantReply = false,
+  ) {
     await this.assertCanAccessChannel(channelId, actor.sub);
 
     const cleanContent = this.guardMessageLen(content);
@@ -509,12 +578,6 @@ export class MessagesService {
         },
       },
       include: MESSAGE_INCLUDE_FULL,
-    });
-
-    await this.updateConversationActivity({
-      conversationId: msg.conversationId ?? null,
-      messageType: resolvedMessageType,
-      createdAt: msg.createdAt,
     });
 
     // realtime push (full payload)
@@ -568,12 +631,19 @@ export class MessagesService {
       })),
     });
 
-    // unread delta for everyone except sender
     const ch = await this.prisma.channel.findUnique({
       where: { id: msg.channelId },
       select: { members: { select: { id: true } } },
     });
 
+    await this.updateConversationActivity({
+      conversationId: msg.conversationId ?? null,
+      messageType: resolvedMessageType,
+      createdAt: msg.createdAt,
+      memberUserIds: (ch?.members ?? []).map((member) => member.id),
+    });
+
+    // unread delta for everyone except sender
     for (const m of ch?.members ?? []) {
       if (m.id === msg.authorId) continue;
 
@@ -589,7 +659,8 @@ export class MessagesService {
     if (
       msg.conversationId &&
       resolvedMessageType === MessageContextType.CUSTOMER &&
-      botId
+      botId &&
+      !suppressConversationAssistantReply
     ) {
       void this.maybeRespondInConversation({
         messageId: msg.id,

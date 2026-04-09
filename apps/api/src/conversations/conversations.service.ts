@@ -11,58 +11,19 @@ import {
   type Prisma,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { CreateCustomerConversationDto } from './dto/create-customer-conversation.dto';
 import { CreateConversationDto } from './dto/create-conversation.dto';
 import { UpdateConversationDto } from './dto/update-conversation.dto';
 import { ListConversationsDto } from './dto/list-conversations.dto';
 import { ConversationLifecycleAction } from './dto/transition-conversation.dto';
 import { ConversationsRealtime } from './conversations.realtime';
 import type { AuthPrincipal } from '../auth/auth.types';
-
-const CONVERSATION_INCLUDE = {
-  customer: true,
-  assignee: {
-    select: {
-      id: true,
-      email: true,
-      displayName: true,
-      role: true,
-    },
-  },
-  escalatedBy: {
-    select: {
-      id: true,
-      email: true,
-      displayName: true,
-      role: true,
-    },
-  },
-  messages: {
-    where: { deletedAt: null },
-    orderBy: { createdAt: 'desc' },
-    take: 1,
-    select: {
-      id: true,
-      content: true,
-      createdAt: true,
-      channelId: true,
-      author: {
-        select: {
-          id: true,
-          displayName: true,
-        },
-      },
-    },
-  },
-  _count: {
-    select: {
-      messages: true,
-    },
-  },
-} satisfies Prisma.ConversationInclude;
-
-type ConversationWithPreview = Prisma.ConversationGetPayload<{
-  include: typeof CONVERSATION_INCLUDE;
-}>;
+import { MessagesService } from '../messages/messages.service';
+import {
+  CONVERSATION_WITH_PREVIEW_INCLUDE,
+  serializeConversationWithPreview,
+  type ConversationWithPreview,
+} from './conversation-serialization';
 
 const ALLOWED_FORWARD_STATUS_TRANSITIONS: Record<
   ConversationStatus,
@@ -81,32 +42,18 @@ const ALLOWED_FORWARD_STATUS_TRANSITIONS: Record<
 };
 
 const DEFAULT_ESCALATION_TARGET = 'SUPERVISOR_REVIEW';
+const SUPPORT_CHANNEL_NAME_PREFIX = '__support__:';
 
 @Injectable()
 export class ConversationsService {
   constructor(
     private prisma: PrismaService,
     private realtime: ConversationsRealtime,
+    private messages: MessagesService,
   ) {}
 
   private serializeConversation(conversation: ConversationWithPreview) {
-    const { messages, _count, ...rest } = conversation;
-    const latestMessage = messages[0] ?? null;
-
-    return {
-      ...rest,
-      primaryChannelId: latestMessage?.channelId ?? null,
-      latestMessagePreview: latestMessage
-        ? {
-            id: latestMessage.id,
-            content: latestMessage.content,
-            createdAt: latestMessage.createdAt,
-            channelId: latestMessage.channelId,
-            author: latestMessage.author,
-          }
-        : null,
-      messageCount: _count.messages,
-    };
+    return serializeConversationWithPreview(conversation);
   }
 
   private assertCreateConversationInput(dto?: CreateConversationDto) {
@@ -194,7 +141,7 @@ export class ConversationsService {
         resolvedAt:
           params.nextStatus === ConversationStatus.RESOLVED ? new Date() : null,
       },
-      include: CONVERSATION_INCLUDE,
+      include: CONVERSATION_WITH_PREVIEW_INCLUDE,
     });
 
     const serialized = this.serializeConversation(conversation);
@@ -285,8 +232,59 @@ export class ConversationsService {
     return actor;
   }
 
-  async listConversations(filters: ListConversationsDto) {
+  private async resolveConversationAccessScope(actor?: AuthPrincipal) {
+    if (!actor) {
+      return {
+        isAdmin: true,
+        customerId: null,
+      };
+    }
+
+    if (actor.subjectType === 'customer') {
+      return {
+        isAdmin: false,
+        customerId: actor.sub,
+      };
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: actor.sub },
+      select: { email: true, role: true },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    if (user.role === Role.ADMIN) {
+      return {
+        isAdmin: true,
+        customerId: null,
+      };
+    }
+
+    const customer = await this.prisma.customer.findUnique({
+      where: { email: user.email },
+      select: { id: true },
+    });
+
+    return {
+      isAdmin: false,
+      customerId: customer?.id ?? null,
+    };
+  }
+
+  async listConversations(filters: ListConversationsDto, actor?: AuthPrincipal) {
+    const scope = await this.resolveConversationAccessScope(actor);
+    if (!scope.isAdmin && !scope.customerId) {
+      return [];
+    }
+
     const where: Prisma.ConversationWhereInput = {};
+
+    if (!scope.isAdmin) {
+      where.customerId = scope.customerId;
+    }
 
     if (filters.status) {
       where.status = filters.status;
@@ -340,7 +338,7 @@ export class ConversationsService {
       where,
       take: filters.take ?? 50,
       orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
-      include: CONVERSATION_INCLUDE,
+      include: CONVERSATION_WITH_PREVIEW_INCLUDE,
     });
 
     return conversations.map((conversation) =>
@@ -348,13 +346,18 @@ export class ConversationsService {
     );
   }
 
-  async getConversationById(id: string) {
+  async getConversationById(id: string, actor?: AuthPrincipal) {
+    const scope = await this.resolveConversationAccessScope(actor);
     const conversation = await this.prisma.conversation.findUnique({
       where: { id },
-      include: CONVERSATION_INCLUDE,
+      include: CONVERSATION_WITH_PREVIEW_INCLUDE,
     });
 
     if (!conversation) {
+      throw new NotFoundException('Conversation not found');
+    }
+
+    if (!scope.isAdmin && conversation.customerId !== scope.customerId) {
       throw new NotFoundException('Conversation not found');
     }
 
@@ -392,10 +395,12 @@ export class ConversationsService {
         escalationTarget: escalationState.nextEscalationTarget,
         escalatedAt: escalationState.nextEscalatedAt,
       },
-      include: CONVERSATION_INCLUDE,
+      include: CONVERSATION_WITH_PREVIEW_INCLUDE,
     });
 
     const serialized = this.serializeConversation(conversation);
+
+    this.realtime.emitConversationCreated(serialized);
 
     if (serialized.isEscalated) {
       console.log(
@@ -405,6 +410,56 @@ export class ConversationsService {
     }
 
     return serialized;
+  }
+
+  async createCustomerConversation(
+    actor: AuthPrincipal,
+    dto: CreateCustomerConversationDto,
+  ) {
+    if (actor.subjectType !== 'user') {
+      throw new ForbiddenException(
+        'Customer conversation bootstrap currently requires a user actor',
+      );
+    }
+
+    const initialMessage = dto.message?.trim();
+    if (!initialMessage) {
+      throw new BadRequestException('Initial support message is required');
+    }
+
+    const customerId = await this.resolveCustomerIdForActor(actor);
+    const subject =
+      dto.subject?.trim() || `Support request from ${actor.email ?? 'customer'}`;
+
+    const conversation = await this.prisma.conversation.create({
+      data: {
+        subject,
+        status: ConversationStatus.OPEN,
+        priority: ConversationPriority.NORMAL,
+        customerId,
+        tags: [],
+        isEscalated: false,
+      },
+      include: CONVERSATION_WITH_PREVIEW_INCLUDE,
+    });
+
+    const supportChannelId = await this.createSupportChannelForConversation(
+      conversation.id,
+      actor.sub,
+      subject,
+    );
+
+    await this.messages.createCustomerConversationSeedMessage(
+      supportChannelId,
+      actor,
+      initialMessage,
+      conversation.id,
+    );
+
+    const hydratedConversation = await this.getConversationById(conversation.id);
+    this.realtime.emitConversationCreated(hydratedConversation);
+
+    return hydratedConversation;
   }
 
   async updateConversation(
@@ -482,7 +537,7 @@ export class ConversationsService {
               ? new Date()
               : null,
       },
-      include: CONVERSATION_INCLUDE,
+      include: CONVERSATION_WITH_PREVIEW_INCLUDE,
     });
 
     const serialized = this.serializeConversation(conversation);
@@ -540,7 +595,7 @@ export class ConversationsService {
     const conversation = await this.prisma.conversation.update({
       where: { id },
       data: { assigneeId: assigneeId || null },
-      include: CONVERSATION_INCLUDE,
+      include: CONVERSATION_WITH_PREVIEW_INCLUDE,
     });
 
     const serialized = this.serializeConversation(conversation);
@@ -633,5 +688,85 @@ export class ConversationsService {
         throw new BadRequestException('Assignee must be an agent user');
       }
     }
+  }
+
+  private async resolveCustomerIdForActor(actor: AuthPrincipal) {
+    if (actor.subjectType === 'customer') {
+      if (actor.email) {
+        const customer = await this.prisma.customer.upsert({
+          where: { email: actor.email },
+          update: {},
+          create: { email: actor.email },
+          select: { id: true },
+        });
+
+        return customer.id;
+      }
+
+      const customer = await this.prisma.customer.create({
+        data: {},
+        select: { id: true },
+      });
+
+      return customer.id;
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: actor.sub },
+      select: { email: true, displayName: true },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    const customer = await this.prisma.customer.upsert({
+      where: { email: user.email },
+      update: {
+        name: user.displayName,
+      },
+      create: {
+        email: user.email,
+        name: user.displayName,
+      },
+      select: { id: true },
+    });
+
+    return customer.id;
+  }
+
+  private async createSupportChannelForConversation(
+    conversationId: string,
+    actorUserId: string,
+    subject: string,
+  ) {
+    const admins = await this.prisma.user.findMany({
+      where: { role: Role.ADMIN },
+      select: { id: true },
+    });
+
+    const memberIds = [...new Set([actorUserId, ...admins.map((user) => user.id)])];
+    const now = new Date();
+    const channel = await this.prisma.channel.create({
+      data: {
+        name: `${SUPPORT_CHANNEL_NAME_PREFIX}${conversationId}:${subject.slice(0, 48)}`,
+        isDirect: true,
+        members: {
+          connect: memberIds.map((id) => ({ id })),
+        },
+      },
+      select: { id: true },
+    });
+
+    await this.prisma.channelRead.createMany({
+      data: memberIds.map((userId) => ({
+        userId,
+        channelId: channel.id,
+        lastRead: now,
+      })),
+      skipDuplicates: true,
+    });
+
+    return channel.id;
   }
 }

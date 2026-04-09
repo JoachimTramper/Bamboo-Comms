@@ -9,8 +9,31 @@ type ConversationEventPayload = {
 export class ConversationsRealtime {
   constructor(private readonly ws: WsGateway) {}
 
-  emitConversationUpdated(payload: ConversationEventPayload & Record<string, unknown>) {
+  private emitToUsers(
+    event: string,
+    payload: ConversationEventPayload & Record<string, unknown>,
+    userIds: string[] = [],
+  ) {
+    const uniqueUserIds = [...new Set(userIds.filter(Boolean))];
+
+    for (const userId of uniqueUserIds) {
+      this.ws.server.to(`user:${userId}`).emit(event, payload);
+    }
+  }
+
+  emitConversationCreated(
+    payload: ConversationEventPayload & Record<string, unknown>,
+  ) {
+    this.ws.server.emit('conversation.created', payload);
+    this.emitConversationUpdated(payload);
+  }
+
+  emitConversationUpdated(
+    payload: ConversationEventPayload & Record<string, unknown>,
+    userIds: string[] = [],
+  ) {
     this.ws.server.to(`conv:${payload.id}`).emit('conversation.updated', payload);
+    this.emitToUsers('conversation.updated', payload, userIds);
   }
 
   emitConversationAssigned(

@@ -392,6 +392,17 @@ export async function getConversationById(conversationId: string) {
   return data as SupportConversation;
 }
 
+export async function createCustomerSupportConversation(params: {
+  subject?: string;
+  message: string;
+}) {
+  const { data } = await api.post("/conversations/customer", {
+    subject: params.subject?.trim() || undefined,
+    message: params.message.trim(),
+  });
+  return data as SupportConversation;
+}
+
 export async function assignConversation(
   conversationId: string,
   assigneeId?: string | null,

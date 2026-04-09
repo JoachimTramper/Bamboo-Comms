@@ -10,12 +10,15 @@ type Props = {
   conversations: SupportConversation[];
   activeConversationId: string | null;
   onSelectConversation: (conversationId: string) => void;
-  statusFilter: ConversationStatus | "ALL";
-  priorityFilter: ConversationPriority | "ALL";
-  assignedToMeOnly: boolean;
-  onStatusFilterChange: (value: ConversationStatus | "ALL") => void;
-  onPriorityFilterChange: (value: ConversationPriority | "ALL") => void;
-  onAssignedToMeOnlyChange: (value: boolean) => void;
+  statusFilter?: ConversationStatus | "ALL";
+  priorityFilter?: ConversationPriority | "ALL";
+  assignedToMeOnly?: boolean;
+  onStatusFilterChange?: (value: ConversationStatus | "ALL") => void;
+  onPriorityFilterChange?: (value: ConversationPriority | "ALL") => void;
+  onAssignedToMeOnlyChange?: (value: boolean) => void;
+  title?: string;
+  showFilters?: boolean;
+  emptyStateMessage?: string;
   loading?: boolean;
 };
 
@@ -63,26 +66,30 @@ export function SupportInboxList({
   conversations,
   activeConversationId,
   onSelectConversation,
-  statusFilter,
-  priorityFilter,
-  assignedToMeOnly,
-  onStatusFilterChange,
-  onPriorityFilterChange,
-  onAssignedToMeOnlyChange,
+  statusFilter = "ALL",
+  priorityFilter = "ALL",
+  assignedToMeOnly = false,
+  onStatusFilterChange = () => {},
+  onPriorityFilterChange = () => {},
+  onAssignedToMeOnlyChange = () => {},
+  title = "Support Inbox",
+  showFilters = true,
+  emptyStateMessage = "No support conversations match the current filters.",
   loading = false,
 }: Props) {
   return (
     <section>
       <div className="flex items-center justify-between gap-2">
         <h2 className="font-semibold text-xs uppercase tracking-wide text-neutral-800">
-          Support Inbox
+          {title}
         </h2>
         <span className="text-[11px] text-neutral-500">
           {loading ? "Loading..." : `${conversations.length} threads`}
         </span>
       </div>
 
-      <div className="mt-2 rounded-xl border border-stone-200 bg-white/90 p-2">
+      {showFilters && (
+        <div className="mt-2 rounded-xl border border-stone-200 bg-white/90 p-2">
         <div className="grid grid-cols-1 gap-2">
           <label className="text-[11px] font-medium uppercase tracking-wide text-neutral-500">
             Status
@@ -138,7 +145,8 @@ export function SupportInboxList({
         <div className="mt-2 text-[11px] text-neutral-500">
           Sorted by latest activity
         </div>
-      </div>
+        </div>
+      )}
 
       <div className="mt-2 space-y-2">
         {conversations.map((conversation) => {
@@ -216,7 +224,7 @@ export function SupportInboxList({
 
         {!loading && conversations.length === 0 && (
           <div className="rounded-xl border border-dashed border-neutral-200 bg-white px-3 py-4 text-sm text-neutral-500">
-            No support conversations match the current filters.
+            {emptyStateMessage}
           </div>
         )}
       </div>

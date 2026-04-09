@@ -130,17 +130,29 @@ export function useConversations(
 
     const onConversationUpdate = (payload: SupportConversation) => {
       setConversations((prev) =>
-        prev.map((item) => (item.id === payload.id ? { ...item, ...payload } : item)),
+        prev.some((item) => item.id === payload.id)
+          ? prev.map((item) =>
+              item.id === payload.id ? { ...item, ...payload } : item,
+            )
+          : [payload, ...prev],
       );
       setActiveConversation((prev) => mergeConversation(prev, payload));
     };
 
+    const onConversationCreated = (payload: SupportConversation) => {
+      setConversations((prev) =>
+        prev.some((item) => item.id === payload.id) ? prev : [payload, ...prev],
+      );
+    };
+
+    socket.on("conversation.created", onConversationCreated);
     socket.on("conversation.updated", onConversationUpdate);
     socket.on("conversation.assigned", onConversationUpdate);
     socket.on("conversation.status.updated", onConversationUpdate);
     socket.on("conversation.escalated", onConversationUpdate);
 
     return () => {
+      socket?.off("conversation.created", onConversationCreated);
       socket?.off("conversation.updated", onConversationUpdate);
       socket?.off("conversation.assigned", onConversationUpdate);
       socket?.off("conversation.status.updated", onConversationUpdate);

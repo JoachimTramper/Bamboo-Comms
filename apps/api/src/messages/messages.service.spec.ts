@@ -7,6 +7,7 @@ describe('MessagesService', () => {
   let rt: any;
   let bot: any;
   let assistant: any;
+  let conversationsRealtime: any;
 
   beforeEach(() => {
     prisma = {
@@ -53,7 +54,17 @@ describe('MessagesService', () => {
       generateReply: jest.fn(),
     };
 
-    service = new MessagesService(prisma, rt, bot, assistant);
+    conversationsRealtime = {
+      emitConversationUpdated: jest.fn(),
+    };
+
+    service = new MessagesService(
+      prisma,
+      rt,
+      bot,
+      assistant,
+      conversationsRealtime,
+    );
   });
 
   it('stores conversation customer messages with support semantics', async () => {
@@ -364,5 +375,127 @@ describe('MessagesService', () => {
     );
 
     expect(bot.maybeRespond).not.toHaveBeenCalled();
+  });
+
+  it('emits updated conversation preview metadata when support activity changes', async () => {
+    prisma.channel.findUnique.mockImplementation(({ select }: any) => {
+      if (select?.name) {
+        return Promise.resolve({
+          id: 'chan-1',
+          name: 'support',
+          isDirect: true,
+          members: [{ id: 'cust-1' }, { id: 'admin-1' }],
+        });
+      }
+
+      return Promise.resolve({
+        id: 'chan-1',
+        members: [{ id: 'cust-1' }, { id: 'admin-1' }],
+      });
+    });
+
+    prisma.conversation.findUnique
+      .mockResolvedValueOnce({ id: 'conv-1' })
+      .mockResolvedValueOnce({
+        lastCustomerMessageAt: new Date('2026-04-01T09:55:00.000Z'),
+      })
+      .mockResolvedValueOnce({
+        id: 'conv-1',
+        firstResponseAt: null,
+        lastCustomerMessageAt: new Date('2026-04-01T09:55:00.000Z'),
+      });
+
+    prisma.user.findFirst.mockResolvedValue(null);
+    prisma.message.create.mockResolvedValue({
+      id: 'msg-1',
+      channelId: 'chan-1',
+      conversationId: 'conv-1',
+      messageType: MessageContextType.AGENT,
+      responseTimeMs: 300000,
+      authorId: 'admin-1',
+      content: 'We are checking this now.',
+      createdAt: new Date('2026-04-01T10:00:00.000Z'),
+      author: {
+        id: 'admin-1',
+        displayName: 'Agent',
+        avatarUrl: null,
+      },
+      parent: null,
+      reactions: [],
+      mentions: [],
+      attachments: [],
+    });
+    prisma.conversation.update.mockResolvedValue({
+      id: 'conv-1',
+      subject: 'Billing help',
+      status: 'OPEN',
+      priority: 'NORMAL',
+      tags: [],
+      isEscalated: false,
+      escalationReason: null,
+      escalationTarget: null,
+      createdAt: new Date('2026-04-01T09:50:00.000Z'),
+      updatedAt: new Date('2026-04-01T10:00:00.000Z'),
+      lastMessageAt: new Date('2026-04-01T10:00:00.000Z'),
+      lastCustomerMessageAt: new Date('2026-04-01T09:55:00.000Z'),
+      lastSupportReplyAt: new Date('2026-04-01T10:00:00.000Z'),
+      firstResponseAt: new Date('2026-04-01T10:00:00.000Z'),
+      resolvedAt: null,
+      escalatedAt: null,
+      customerId: 'cust-1',
+      assigneeId: 'admin-1',
+      escalatedById: null,
+      customer: {
+        id: 'cust-1',
+        email: 'c@example.com',
+        name: 'Customer',
+        company: null,
+        planTier: null,
+      },
+      assignee: {
+        id: 'admin-1',
+        email: 'admin@example.com',
+        displayName: 'Agent',
+        role: 'ADMIN',
+      },
+      escalatedBy: null,
+      messages: [
+        {
+          id: 'msg-1',
+          content: 'We are checking this now.',
+          createdAt: new Date('2026-04-01T10:00:00.000Z'),
+          channelId: 'chan-1',
+          author: {
+            id: 'admin-1',
+            displayName: 'Agent',
+          },
+        },
+      ],
+      _count: {
+        messages: 2,
+      },
+    });
+
+    await service.create(
+      'chan-1',
+      { sub: 'admin-1', email: 'admin@example.com', subjectType: 'user' },
+      'We are checking this now.',
+      'conv-1',
+      MessageContextType.AGENT,
+    );
+
+    expect(conversationsRealtime.emitConversationUpdated).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'conv-1',
+        lastMessageAt: expect.any(Date),
+        firstResponseAt: expect.any(Date),
+        latestMessagePreview: expect.objectContaining({
+          id: 'msg-1',
+          content: 'We are checking this now.',
+        }),
+        messageCount: 2,
+      }),
+      ['cust-1', 'admin-1'],
+    );
   });
 });

@@ -9,6 +9,7 @@ import { AiAssistantModule } from '../ai-assistant/ai-assistant.module';
 
 import { MessagesRealtime } from './messages.realtime';
 import { MessagesBotOrchestrator } from './messages.bot';
+import { ConversationsRealtime } from '../conversations/conversations.realtime';
 
 @Module({
   imports: [
@@ -18,7 +19,12 @@ import { MessagesBotOrchestrator } from './messages.bot';
     forwardRef(() => AiAssistantModule),
   ],
   controllers: [MessagesController],
-  providers: [MessagesService, MessagesRealtime, MessagesBotOrchestrator],
+  providers: [
+    MessagesService,
+    MessagesRealtime,
+    MessagesBotOrchestrator,
+    ConversationsRealtime,
+  ],
   exports: [MessagesService],
 })
 export class MessagesModule {}

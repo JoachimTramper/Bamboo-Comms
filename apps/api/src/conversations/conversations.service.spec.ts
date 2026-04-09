@@ -10,6 +10,7 @@ describe('ConversationsService', () => {
   let service: ConversationsService;
   let prisma: any;
   let realtime: any;
+  let messages: any;
 
   const conversationRecord = {
     id: 'conv-1',
@@ -42,24 +43,41 @@ describe('ConversationsService', () => {
     prisma = {
       conversation: {
         findUnique: jest.fn(),
+        findFirst: jest.fn(),
         update: jest.fn(),
+        create: jest.fn(),
+        findMany: jest.fn(),
+      },
+      channel: {
+        create: jest.fn(),
+      },
+      channelRead: {
+        createMany: jest.fn(),
       },
       customer: {
         findUnique: jest.fn(),
+        upsert: jest.fn(),
+        create: jest.fn(),
       },
       user: {
         findUnique: jest.fn(),
+        findMany: jest.fn(),
       },
     };
 
     realtime = {
       emitConversationUpdated: jest.fn(),
+      emitConversationCreated: jest.fn(),
       emitConversationAssigned: jest.fn(),
       emitConversationStatusUpdated: jest.fn(),
       emitConversationEscalated: jest.fn(),
     };
 
-    service = new ConversationsService(prisma, realtime);
+    messages = {
+      createCustomerConversationSeedMessage: jest.fn(),
+    };
+
+    service = new ConversationsService(prisma, realtime, messages);
   });
 
   it('allows OPEN to move to PENDING and broadcasts the status change', async () => {
@@ -334,5 +352,177 @@ describe('ConversationsService', () => {
       }),
     );
     expect(result.isEscalated).toBe(true);
+  });
+
+  it('creates a customer-linked conversation with an initial customer message', async () => {
+    prisma.user.findUnique.mockResolvedValue({
+      email: 'customer@example.com',
+      displayName: 'Customer User',
+    });
+    prisma.user.findMany.mockResolvedValue([{ id: 'agent-1' }]);
+    prisma.customer.findUnique.mockResolvedValue({ id: 'cust-1' });
+    prisma.customer.upsert.mockResolvedValue({ id: 'cust-1' });
+    prisma.conversation.create.mockResolvedValue({
+      ...conversationRecord,
+      id: 'conv-customer-1',
+      subject: 'Support request from customer@example.com',
+      customerId: 'cust-1',
+      customer: {
+        id: 'cust-1',
+        email: 'customer@example.com',
+        name: 'Customer User',
+        company: null,
+        planTier: null,
+        createdAt: new Date('2026-04-03T12:00:00.000Z'),
+        updatedAt: new Date('2026-04-03T12:00:00.000Z'),
+      },
+    });
+    prisma.channel.create.mockResolvedValue({ id: 'support-chan-1' });
+    prisma.channelRead.createMany.mockResolvedValue({ count: 2 });
+    messages.createCustomerConversationSeedMessage.mockResolvedValue({
+      id: 'msg-1',
+      conversationId: 'conv-customer-1',
+    });
+    prisma.conversation.findUnique.mockResolvedValue({
+      ...conversationRecord,
+      id: 'conv-customer-1',
+      subject: 'Support request from customer@example.com',
+      customerId: 'cust-1',
+      customer: {
+        id: 'cust-1',
+        email: 'customer@example.com',
+        name: 'Customer User',
+        company: null,
+        planTier: null,
+        createdAt: new Date('2026-04-03T12:00:00.000Z'),
+        updatedAt: new Date('2026-04-03T12:00:00.000Z'),
+      },
+      messages: [
+        {
+          id: 'msg-1',
+          content: 'My invoice total looks wrong.',
+          createdAt: new Date('2026-04-03T12:05:00.000Z'),
+          channelId: 'support-chan-1',
+          author: {
+            id: 'user-1',
+            displayName: 'Customer User',
+          },
+        },
+      ],
+      _count: { messages: 1 },
+    });
+
+    const result = await service.createCustomerConversation(
+      {
+        sub: 'user-1',
+        email: 'customer@example.com',
+        subjectType: 'user',
+      },
+      { message: 'My invoice total looks wrong.' },
+    );
+
+    expect(prisma.customer.upsert).toHaveBeenCalledWith({
+      where: { email: 'customer@example.com' },
+      update: { name: 'Customer User' },
+      create: {
+        email: 'customer@example.com',
+        name: 'Customer User',
+      },
+      select: { id: true },
+    });
+    expect(prisma.conversation.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          subject: 'Support request from customer@example.com',
+          customerId: 'cust-1',
+          status: ConversationStatus.OPEN,
+          priority: ConversationPriority.NORMAL,
+        }),
+      }),
+    );
+    expect(prisma.channel.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          isDirect: true,
+        }),
+      }),
+    );
+    expect(messages.createCustomerConversationSeedMessage).toHaveBeenCalledWith(
+      'support-chan-1',
+      {
+        sub: 'user-1',
+        email: 'customer@example.com',
+        subjectType: 'user',
+      },
+      'My invoice total looks wrong.',
+      'conv-customer-1',
+    );
+    expect(realtime.emitConversationCreated).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'conv-customer-1',
+        customerId: 'cust-1',
+        messageCount: 1,
+      }),
+    );
+    expect(result.customerId).toBe('cust-1');
+  });
+
+  it('returns only the current customer conversations for non-admin users', async () => {
+    prisma.user.findUnique.mockResolvedValueOnce({
+      email: 'customer@example.com',
+      role: Role.USER,
+    });
+    prisma.customer.findUnique.mockResolvedValue({
+      id: 'cust-1',
+    });
+    prisma.conversation.findMany.mockResolvedValue([
+      {
+        ...conversationRecord,
+        id: 'conv-customer-1',
+        customerId: 'cust-1',
+      },
+    ]);
+
+    const result = await service.listConversations(
+      {},
+      {
+        sub: 'user-1',
+        email: 'customer@example.com',
+        subjectType: 'user',
+      },
+    );
+
+    expect(prisma.conversation.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          customerId: 'cust-1',
+        }),
+      }),
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe('conv-customer-1');
+  });
+
+  it('blocks non-admin users from loading another customer conversation', async () => {
+    prisma.user.findUnique.mockResolvedValueOnce({
+      email: 'customer@example.com',
+      role: Role.USER,
+    });
+    prisma.customer.findUnique.mockResolvedValue({
+      id: 'cust-1',
+    });
+    prisma.conversation.findUnique.mockResolvedValue({
+      ...conversationRecord,
+      id: 'conv-other',
+      customerId: 'cust-2',
+    });
+
+    await expect(
+      service.getConversationById('conv-other', {
+        sub: 'user-1',
+        email: 'customer@example.com',
+        subjectType: 'user',
+      }),
+    ).rejects.toThrow('Conversation not found');
   });
 });
