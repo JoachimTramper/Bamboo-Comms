@@ -21,6 +21,7 @@ type Props = {
   showFilters?: boolean;
   emptyStateMessage?: string;
   loading?: boolean;
+  error?: string | null;
 };
 
 function formatConversationPreview(conversation: SupportConversation) {
@@ -89,6 +90,7 @@ export function SupportInboxList({
   showFilters = true,
   emptyStateMessage = "No support conversations match the current filters.",
   loading = false,
+  error = null,
 }: Props) {
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const closedSectionRef = useRef<HTMLDivElement | null>(null);
@@ -117,6 +119,14 @@ export function SupportInboxList({
   );
   const activeConversationIsOpen = grouped.active.some(
     (conversation) => conversation.id === activeConversationId,
+  );
+  const openUnreadCount = grouped.active.reduce(
+    (total, conversation) => total + (conversation.unread ?? 0),
+    0,
+  );
+  const closedUnreadCount = grouped.closed.reduce(
+    (total, conversation) => total + (conversation.unread ?? 0),
+    0,
   );
 
   useEffect(() => {
@@ -162,6 +172,8 @@ export function SupportInboxList({
     const title = formatConversationTitle(conversation);
     const assigneeLabel = conversation.assignee?.displayName ?? "Unassigned";
     const muted = options?.muted ?? false;
+    const unread = conversation.unread ?? 0;
+    const showUnreadAlert = unread > 0 && !isActive;
 
     return (
       <button
@@ -204,12 +216,19 @@ export function SupportInboxList({
           </div>
           <div
             className={`inline-flex min-w-[2rem] items-center justify-center rounded-full border px-2 py-1 text-[11px] font-semibold leading-none ${
-              isActive
+              showUnreadAlert
+                ? "border-rose-200 bg-rose-500 text-white"
+                : isActive
                 ? "border-indigo-200 bg-indigo-100 text-indigo-700"
                 : "border-neutral-200 bg-white text-neutral-500"
             }`}
+            aria-label={
+              showUnreadAlert
+                ? `${unread} unread messages`
+                : `${conversation.messageCount} messages`
+            }
           >
-            {conversation.messageCount}
+            {showUnreadAlert ? unread : conversation.messageCount}
           </div>
         </div>
 
@@ -316,7 +335,19 @@ export function SupportInboxList({
         ref={scrollContainerRef}
         className="mt-2 min-h-0 min-w-0 flex-1 space-y-2 overflow-y-auto"
       >
-        {showFilters ? (
+        {error && (
+          <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-4 text-sm text-rose-700">
+            {error}
+          </div>
+        )}
+
+        {!loading && !error && conversations.length === 0 && (
+          <div className="rounded-xl border border-dashed border-neutral-200 bg-white px-4 py-5 text-sm text-neutral-600">
+            {emptyStateMessage}
+          </div>
+        )}
+
+        {showFilters && conversations.length > 0 ? (
           <>
             <div className="space-y-2">
               <button
@@ -328,7 +359,14 @@ export function SupportInboxList({
                 )}`}
               >
                 <span>Open</span>
-                <span>{grouped.active.length}</span>
+                <span className="flex items-center gap-2">
+                  {!openExpanded && openUnreadCount > 0 && (
+                    <span className="inline-flex min-w-[1.5rem] items-center justify-center rounded-full border border-rose-200 bg-rose-500 px-2 py-1 text-[10px] font-semibold leading-none text-white">
+                      {openUnreadCount}
+                    </span>
+                  )}
+                  <span>{grouped.active.length}</span>
+                </span>
               </button>
               {openExpanded &&
                 (grouped.active.length > 0 ? (
@@ -353,7 +391,14 @@ export function SupportInboxList({
                 )}`}
               >
                 <span>Closed</span>
-                <span>{grouped.closed.length}</span>
+                <span className="flex items-center gap-2">
+                  {!closedExpanded && closedUnreadCount > 0 && (
+                    <span className="inline-flex min-w-[1.5rem] items-center justify-center rounded-full border border-rose-200 bg-rose-500 px-2 py-1 text-[10px] font-semibold leading-none text-white">
+                      {closedUnreadCount}
+                    </span>
+                  )}
+                  <span>{grouped.closed.length}</span>
+                </span>
               </button>
 
               {closedExpanded &&
@@ -370,17 +415,13 @@ export function SupportInboxList({
                 ))}
             </div>
           </>
-        ) : (
+        ) : !showFilters ? (
           conversations.map((conversation) => {
             return renderConversationItem(conversation);
           })
-        )}
+        ) : null
+        }
 
-        {!showFilters && !loading && conversations.length === 0 && (
-          <div className="rounded-xl border border-dashed border-neutral-200 bg-white px-3 py-4 text-sm text-neutral-500">
-            {emptyStateMessage}
-          </div>
-        )}
       </div>
     </section>
   );

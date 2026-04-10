@@ -16,10 +16,11 @@ type MentionCandidate = {
 type ComposerProps = {
   value: string;
   onChange: (v: string) => void;
-  onSend: (files: File[]) => void;
+  onSend: (files: File[]) => Promise<void> | void;
   replyTo?: ReplyTarget | null;
   onCancelReply?: () => void;
   mentionCandidates?: MentionCandidate[];
+  loading?: boolean;
 };
 
 export function Composer({
@@ -29,6 +30,7 @@ export function Composer({
   replyTo,
   onCancelReply,
   mentionCandidates = [],
+  loading = false,
 }: ComposerProps) {
   const [mentionQuery, setMentionQuery] = useState("");
   const [showMentionList, setShowMentionList] = useState(false);
@@ -36,7 +38,7 @@ export function Composer({
   const [files, setFiles] = useState<File[]>([]);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  const canSend = !!value.trim() || files.length > 0;
+  const canSend = (!!value.trim() || files.length > 0) && !loading;
 
   const inputRef = useRef<HTMLInputElement | null>(null);
 
@@ -107,14 +109,14 @@ export function Composer({
     });
   }
 
-  function handleSendClick() {
+  async function handleSendClick() {
     if (!canSend) return;
 
     setShowMentionList(false);
     setMentionQuery("");
 
-    onSend(files);
-    setFiles([]); // reset selected files after sending
+    await onSend(files);
+    setFiles([]);
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
@@ -243,7 +245,8 @@ export function Composer({
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              className="flex items-center justify-center h-8 w-8 rounded-full text-neutral-500 hover:bg-neutral-100"
+              disabled={loading}
+              className="flex items-center justify-center h-8 w-8 rounded-full text-neutral-500 hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-50"
               title="Attach files"
             >
               <Paperclip size={18} strokeWidth={2} />
@@ -257,6 +260,7 @@ export function Composer({
               value={value}
               onChange={(e) => handleChange(e.target.value)}
               onKeyDown={handleKeyDown}
+              disabled={loading}
             />
           </div>
         </div>
@@ -281,7 +285,7 @@ export function Composer({
           onClick={handleSendClick}
           type="button"
         >
-          Send
+          {loading ? "Sending..." : "Send"}
         </button>
       </div>
     </div>

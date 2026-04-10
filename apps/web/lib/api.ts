@@ -14,6 +14,8 @@ const api = axios.create({
   withCredentials: true,
 });
 
+const CONVERSATION_REQUEST_TIMEOUT_MS = 10000;
+
 const TOKEN_KEY = "accessToken";
 let CURRENT_TOKEN: string | null = null; // per-tab in-memory cache
 
@@ -388,7 +390,9 @@ export async function listConversations(filters?: {
 }
 
 export async function getConversationById(conversationId: string) {
-  const { data } = await api.get(`/conversations/${conversationId}`);
+  const { data } = await api.get(`/conversations/${conversationId}`, {
+    timeout: CONVERSATION_REQUEST_TIMEOUT_MS,
+  });
   return data as SupportConversation;
 }
 
@@ -396,10 +400,16 @@ export async function createCustomerSupportConversation(params: {
   subject?: string;
   message: string;
 }) {
-  const { data } = await api.post("/conversations/customer", {
-    subject: params.subject?.trim() || undefined,
-    message: params.message.trim(),
-  });
+  const { data } = await api.post(
+    "/conversations/customer",
+    {
+      subject: params.subject?.trim() || undefined,
+      message: params.message.trim(),
+    },
+    {
+      timeout: CONVERSATION_REQUEST_TIMEOUT_MS,
+    },
+  );
   return data as SupportConversation;
 }
 
@@ -407,9 +417,15 @@ export async function assignConversation(
   conversationId: string,
   assigneeId?: string | null,
 ) {
-  const { data } = await api.patch(`/conversations/${conversationId}/assign`, {
-    assigneeId: assigneeId ?? undefined,
-  });
+  const { data } = await api.patch(
+    `/conversations/${conversationId}/assign`,
+    {
+      assigneeId: assigneeId ?? undefined,
+    },
+    {
+      timeout: CONVERSATION_REQUEST_TIMEOUT_MS,
+    },
+  );
   return data as SupportConversation;
 }
 
@@ -424,7 +440,9 @@ export async function updateConversation(
     escalationReason?: string | null;
   },
 ) {
-  const { data } = await api.patch(`/conversations/${conversationId}`, updates);
+  const { data } = await api.patch(`/conversations/${conversationId}`, updates, {
+    timeout: CONVERSATION_REQUEST_TIMEOUT_MS,
+  });
   return data as SupportConversation;
 }
 
@@ -436,6 +454,9 @@ export async function transitionConversation(
     `/conversations/${conversationId}/lifecycle`,
     {
       action,
+    },
+    {
+      timeout: CONVERSATION_REQUEST_TIMEOUT_MS,
     },
   );
   return data as SupportConversation;

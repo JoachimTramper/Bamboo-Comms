@@ -35,6 +35,7 @@ type Props = {
   onRetrySend?: (id: string) => void;
   headerContent?: ReactNode;
   paddingTopClassName?: string;
+  emptyState?: ReactNode;
 };
 
 export function MessageList({
@@ -60,6 +61,7 @@ export function MessageList({
   onRetrySend,
   headerContent,
   paddingTopClassName,
+  emptyState,
 }: Props) {
   const safeMsgs = msgs;
 
@@ -180,83 +182,82 @@ export function MessageList({
             Loading older messages…
           </div>
         )}
-        {safeMsgs.length === 0 ? (
-          // empty state
-          <div className="flex items-center justify-center py-10">
-            <div className="max-w-sm mx-auto text-center text-sm text-neutral-700 bg-indigo-100 backdrop-blur-sm rounded-xl px-4 py-3 shadow-sm border border-neutral-200">
-              <div className="text-2xl mb-1">🐦🎋</div>
-              <div className="font-medium text-neutral-900 mb-1">
-                Your bamboo forest is quiet…
-              </div>
-              <div className="text-xs text-neutral-600">
-                Send the first message to get the chat going!
-              </div>
-            </div>
-          </div>
-        ) : (
-          safeMsgs.map((m, index) => {
-            const prev = safeMsgs[index - 1];
-            const showDayDivider =
-              !prev || dayKey(prev.createdAt) !== dayKey(m.createdAt);
-
-            const isLastOwn =
-              isDirect && m.authorId === meId && index === lastMyIndex;
-
-            const showSeen =
-              isDirect &&
-              m.authorId === meId &&
-              isLastOwn &&
-              lastReadIndex !== -1 &&
-              lastReadIndex >= lastMyIndex;
-
-            const isHighlighted = highlightedId === m.id;
-
-            return (
-              <div key={m.id}>
-                {showDayDivider && (
-                  <div className="-mt-0 my-2 md:my-4 flex items-center gap-3">
-                    <div className="h-px flex-1 bg-neutral-300/70" />
-                    <div className="text-[11px] px-2 py-1 rounded-full bg-white/70 border border-neutral-300 text-neutral-700">
-                      {formatDayLabel(m.createdAt)}
-                    </div>
-                    <div className="h-px flex-1 bg-neutral-300/70" />
+        {safeMsgs.length === 0
+          ? (emptyState ?? (
+              <div className="flex items-center justify-center py-10">
+                <div className="max-w-sm mx-auto text-center text-sm text-neutral-700 bg-indigo-100 backdrop-blur-sm rounded-xl px-4 py-3 shadow-sm border border-neutral-200">
+                  <div className="text-2xl mb-1">🐦🎋</div>
+                  <div className="font-medium text-neutral-900 mb-1">
+                    Your bamboo forest is quiet…
                   </div>
-                )}
-
-                <div
-                  ref={(el) => {
-                    messageRefs.current[m.id] = el;
-                  }}
-                  className={
-                    isHighlighted
-                      ? "ring-2 ring-blue-400 bg-blue-50 rounded-md"
-                      : ""
-                  }
-                >
-                  <MessageItem
-                    m={m}
-                    meId={meId}
-                    channelId={channelId}
-                    isDirect={isDirect}
-                    isEditing={editingId === m.id}
-                    onStartEdit={() => onStartEdit(m)}
-                    onSaveEdit={() => onSaveEdit(m)}
-                    onCancelEdit={onCancelEdit}
-                    onDelete={() => onDelete(m)}
-                    onReply={() => onReply(m)}
-                    editText={editText}
-                    setEditText={setEditText}
-                    formatDateTime={formatDateTime}
-                    showSeen={showSeen}
-                    isLastOwn={isLastOwn}
-                    onRetry={() => onRetrySend?.(m.id)}
-                    onOpenMenu={scrollToBottomIfNearBottom}
-                  />
+                  <div className="text-xs text-neutral-600">
+                    Send the first message to get the chat going!
+                  </div>
                 </div>
               </div>
-            );
-          })
-        )}
+            ))
+          : safeMsgs.map((m, index) => {
+              const prev = safeMsgs[index - 1];
+              const showDayDivider =
+                !prev || dayKey(prev.createdAt) !== dayKey(m.createdAt);
+
+              const isLastOwn =
+                isDirect && m.authorId === meId && index === lastMyIndex;
+
+              const showSeen =
+                isDirect &&
+                m.authorId === meId &&
+                isLastOwn &&
+                lastReadIndex !== -1 &&
+                lastReadIndex >= lastMyIndex;
+
+              const isHighlighted = highlightedId === m.id;
+
+              return (
+                <div key={m.id}>
+                  {showDayDivider && (
+                    <div className="-mt-0 my-2 md:my-4 flex items-center gap-3">
+                      <div className="h-px flex-1 bg-neutral-300/70" />
+                      <div className="text-[11px] px-2 py-1 rounded-full bg-white/70 border border-neutral-300 text-neutral-700">
+                        {formatDayLabel(m.createdAt)}
+                      </div>
+                      <div className="h-px flex-1 bg-neutral-300/70" />
+                    </div>
+                  )}
+
+                  <div
+                    ref={(el) => {
+                      messageRefs.current[m.id] = el;
+                    }}
+                    className={
+                      isHighlighted
+                        ? "ring-2 ring-blue-400 bg-blue-50 rounded-md"
+                        : ""
+                    }
+                  >
+                    <MessageItem
+                      m={m}
+                      meId={meId}
+                      channelId={channelId}
+                      isDirect={isDirect}
+                      isEditing={editingId === m.id}
+                      onStartEdit={() => onStartEdit(m)}
+                      onSaveEdit={() => onSaveEdit(m)}
+                      onCancelEdit={onCancelEdit}
+                      onDelete={() => onDelete(m)}
+                      onReply={() => onReply(m)}
+                      editText={editText}
+                      setEditText={setEditText}
+                      formatDateTime={formatDateTime}
+                      showSeen={showSeen}
+                      isLastOwn={isLastOwn}
+                      onRetry={() => onRetrySend?.(m.id)}
+                      onOpenMenu={scrollToBottomIfNearBottom}
+                    />
+                  </div>
+                </div>
+              );
+            })}
       </div>
     </div>
   );

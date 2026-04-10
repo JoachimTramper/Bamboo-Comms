@@ -20,9 +20,22 @@ function mergeConversation(
   return { ...current, ...next };
 }
 
+function hasNewConversationActivity(
+  previous: SupportConversation,
+  next: SupportConversation,
+) {
+  const previousAt = previous.lastMessageAt
+    ? new Date(previous.lastMessageAt).getTime()
+    : 0;
+  const nextAt = next.lastMessageAt ? new Date(next.lastMessageAt).getTime() : 0;
+
+  return nextAt > previousAt;
+}
+
 export function useConversations(
   enabled: boolean,
   preferredConversationId?: string | null,
+  supportViewOpen = false,
 ) {
   const [filters, setFilters] = useState<{
     status?: ConversationStatus;
@@ -37,12 +50,16 @@ export function useConversations(
     useState<SupportConversation | null>(null);
   const [loadingList, setLoadingList] = useState(false);
   const [loadingActive, setLoadingActive] = useState(false);
+  const [listError, setListError] = useState<string | null>(null);
+  const [activeError, setActiveError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!enabled) {
       setConversations([]);
       setActiveConversationId(null);
       setActiveConversation(null);
+      setListError(null);
+      setActiveError(null);
       return;
     }
 
@@ -51,10 +68,20 @@ export function useConversations(
     (async () => {
       try {
         setLoadingList(true);
+        setListError(null);
         const items = await listConversations(filters);
         if (cancelled) return;
 
-        setConversations(items);
+        setConversations((prev) => {
+          const unreadById = new Map(
+            prev.map((conversation) => [conversation.id, conversation.unread ?? 0]),
+          );
+
+          return items.map((conversation) => ({
+            ...conversation,
+            unread: unreadById.get(conversation.id) ?? conversation.unread ?? 0,
+          }));
+        });
         setActiveConversationId((prev) => {
           if (prev && items.some((item) => item.id === prev)) return prev;
           if (
@@ -67,6 +94,7 @@ export function useConversations(
         });
       } catch (error) {
         if (!cancelled) {
+          setListError("We couldn't load the support inbox right now.");
           console.error("Failed to load conversations:", error);
         }
       } finally {
@@ -84,6 +112,9 @@ export function useConversations(
   useEffect(() => {
     if (!enabled || !activeConversationId) {
       setActiveConversation(null);
+      if (!activeConversationId) {
+        setActiveError(null);
+      }
       return;
     }
 
@@ -92,17 +123,21 @@ export function useConversations(
     (async () => {
       try {
         setLoadingActive(true);
+        setActiveError(null);
         const conversation = await getConversationById(activeConversationId);
         if (cancelled) return;
 
-        setActiveConversation(conversation);
+        setActiveConversation({ ...conversation, unread: 0 });
         setConversations((prev) =>
           prev.map((item) =>
-            item.id === conversation.id ? { ...item, ...conversation } : item,
+            item.id === conversation.id
+              ? { ...item, ...conversation, unread: 0 }
+              : item,
           ),
         );
       } catch (error) {
         if (!cancelled) {
+          setActiveError("We couldn't load this conversation right now.");
           console.error("Failed to load conversation:", error);
         }
       } finally {
@@ -132,16 +167,35 @@ export function useConversations(
       setConversations((prev) =>
         prev.some((item) => item.id === payload.id)
           ? prev.map((item) =>
-              item.id === payload.id ? { ...item, ...payload } : item,
+              item.id === payload.id
+                ? {
+                    ...item,
+                    ...payload,
+                    unread:
+                      supportViewOpen && activeConversationId === payload.id
+                        ? 0
+                        : hasNewConversationActivity(item, payload)
+                          ? (item.unread ?? 0) + 1
+                          : item.unread ?? 0,
+                  }
+                : item,
             )
-          : [payload, ...prev],
+          : [
+              {
+                ...payload,
+                unread: 0,
+              },
+              ...prev,
+            ],
       );
       setActiveConversation((prev) => mergeConversation(prev, payload));
     };
 
     const onConversationCreated = (payload: SupportConversation) => {
       setConversations((prev) =>
-        prev.some((item) => item.id === payload.id) ? prev : [payload, ...prev],
+        prev.some((item) => item.id === payload.id)
+          ? prev
+          : [{ ...payload, unread: 0 }, ...prev],
       );
     };
 
@@ -158,7 +212,20 @@ export function useConversations(
       socket?.off("conversation.status.updated", onConversationUpdate);
       socket?.off("conversation.escalated", onConversationUpdate);
     };
-  }, [enabled]);
+  }, [activeConversationId, enabled, supportViewOpen]);
+
+  useEffect(() => {
+    if (!supportViewOpen || !activeConversationId) return;
+
+    setConversations((prev) =>
+      prev.map((item) =>
+        item.id === activeConversationId ? { ...item, unread: 0 } : item,
+      ),
+    );
+    setActiveConversation((prev) =>
+      prev && prev.id === activeConversationId ? { ...prev, unread: 0 } : prev,
+    );
+  }, [activeConversationId, supportViewOpen]);
 
   return {
     filters,
@@ -171,5 +238,7 @@ export function useConversations(
     setActiveConversation,
     loadingList,
     loadingActive,
+    listError,
+    activeError,
   };
 }

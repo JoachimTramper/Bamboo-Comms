@@ -39,6 +39,7 @@ type Props = {
   onSupportPriorityFilterChange?: (value: ConversationPriority | "ALL") => void;
   onSupportAssignedToMeOnlyChange?: (value: boolean) => void;
   conversationsLoading?: boolean;
+  conversationsError?: string | null;
 };
 
 type PresenceStatus = "online" | "idle" | "offline";
@@ -71,6 +72,7 @@ export function Sidebar({
   onSupportPriorityFilterChange,
   onSupportAssignedToMeOnlyChange,
   conversationsLoading = false,
+  conversationsError = null,
 }: Props) {
   // --- Presence helpers ---
   function getUserStatus(userId: string): PresenceStatus {
@@ -101,7 +103,7 @@ export function Sidebar({
   return (
     <aside className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden p-3">
       {!isAdmin && onCreateSupportConversation && (
-        <section className="shrink-0 rounded-2xl border border-indigo-200 bg-indigo-50/70 p-3 shadow-sm">
+        <section className="shrink-0 rounded-2xl border border-indigo-200 bg-indigo-50/70 p-3 shadow-sm md:hidden">
           <div className="text-sm font-semibold text-neutral-900">
             Need support?
           </div>
@@ -137,7 +139,9 @@ export function Sidebar({
               priorityFilter={supportPriorityFilter}
               assignedToMeOnly={supportAssignedToMeOnly}
               onStatusFilterChange={onSupportStatusFilterChange ?? (() => {})}
-              onPriorityFilterChange={onSupportPriorityFilterChange ?? (() => {})}
+              onPriorityFilterChange={
+                onSupportPriorityFilterChange ?? (() => {})
+              }
               onAssignedToMeOnlyChange={
                 onSupportAssignedToMeOnlyChange ?? (() => {})
               }
@@ -145,10 +149,11 @@ export function Sidebar({
               showFilters={isAdmin}
               emptyStateMessage={
                 isAdmin
-                  ? "No support conversations match the current filters."
+                  ? "No support conversations yet. New customer threads will appear here."
                   : "You have not started any support conversations yet."
               }
               loading={conversationsLoading}
+              error={conversationsError}
             />
           </div>
         )}
@@ -156,31 +161,31 @@ export function Sidebar({
         <div className="min-h-0 min-w-0 flex-1 space-y-3 overflow-y-auto">
           {/* Channels */}
           <section className="min-w-0">
-          <h2 className="font-semibold text-xs uppercase tracking-wide text-neutral-800">
-            Channels
-          </h2>
-          {isAdmin && (
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                onCreateChannel();
-              }}
-              className="mt-2 flex min-w-0 gap-2"
-            >
-              <input
-                className="
+            <h2 className="font-semibold text-xs uppercase tracking-wide text-neutral-800">
+              Channels
+            </h2>
+            {isAdmin && (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  onCreateChannel();
+                }}
+                className="mt-2 flex min-w-0 gap-2"
+              >
+                <input
+                  className="
                   min-w-0 flex-1 px-2 py-1 text-sm rounded-lg border border-neutral-300 bg-white
                   text-neutral-900 placeholder:text-neutral-500
                   disabled:bg-neutral-100 disabled:text-neutral-400
                   focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500 outline-none
                 "
-                placeholder="New channel…"
-                value={newChannel}
-                onChange={(e) => setNewChannel(e.target.value)}
-                disabled={creating}
-              />
-              <button
-                className="
+                  placeholder="New channel…"
+                  value={newChannel}
+                  onChange={(e) => setNewChannel(e.target.value)}
+                  disabled={creating}
+                />
+                <button
+                  className="
                   px-3 py-1.5 text-sm rounded-lg
                   bg-indigo-600 text-white font-medium
                   shadow-lg hover:shadow-xl
@@ -189,41 +194,41 @@ export function Sidebar({
                   focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2
                   disabled:opacity-70 disabled:cursor-not-allowed
                 "
-                disabled={creating || !newChannel.trim()}
-                type="submit"
-              >
-                Add
-              </button>
-            </form>
-          )}
+                  disabled={creating || !newChannel.trim()}
+                  type="submit"
+                >
+                  Add
+                </button>
+              </form>
+            )}
 
-          <div className="mt-2 space-y-1">
-            {regularChannels.map((c) => (
-              <button
-                key={c.id}
-                onClick={() => setActive(c.id)}
-                className={`flex min-w-0 items-center justify-between w-full text-left px-2 py-1 rounded-lg text-sm border
+            <div className="mt-2 space-y-1">
+              {regularChannels.map((c) => (
+                <button
+                  key={c.id}
+                  onClick={() => setActive(c.id)}
+                  className={`flex min-w-0 items-center justify-between w-full text-left px-2 py-1 rounded-lg text-sm border
                             transition-all duration-150 hover:-translate-y-0.5 hover:shadow-md
                   ${
                     active === c.id
                       ? "bg-indigo-50 text-indigo-700 border-indigo-200 font-medium"
                       : "hover:bg-neutral-100 border-transparent text-neutral-800"
                   }`}
-              >
-                <span className="min-w-0 truncate">#{c.name}</span>
-                {(c.unread ?? 0) > 0 && (
-                  <span className="ml-2 shrink-0 inline-flex items-center justify-center rounded-full bg-indigo-500 text-white text-[10px] font-semibold min-w-[1rem] h-4 px-[5px] leading-none shadow-sm">
-                    {c.unread}
-                  </span>
-                )}
-              </button>
-            ))}
-            {regularChannels.length === 0 && (
-              <div className="text-sm text-neutral-500 mt-1 px-2">
-                No channels yet
-              </div>
-            )}
-          </div>
+                >
+                  <span className="min-w-0 truncate">#{c.name}</span>
+                  {(c.unread ?? 0) > 0 && (
+                    <span className="ml-2 shrink-0 inline-flex items-center justify-center rounded-full bg-indigo-500 text-white text-[10px] font-semibold min-w-[1rem] h-4 px-[5px] leading-none shadow-sm">
+                      {c.unread}
+                    </span>
+                  )}
+                </button>
+              ))}
+              {regularChannels.length === 0 && (
+                <div className="text-sm text-neutral-500 mt-1 px-2">
+                  No channels yet
+                </div>
+              )}
+            </div>
           </section>
 
           {/* Direct Messages */}
@@ -240,48 +245,48 @@ export function Sidebar({
                 <div className="text-sm text-neutral-500 px-2">No DMs yet</div>
               ) : (
                 dmChannels.map((c) => {
-                // Other person in the DM channel (not myself)
-                const other =
-                  c.members && c.members.length > 0
-                    ? (c.members.find((m) => m.id !== meId) ?? c.members[0])
-                    : undefined;
+                  // Other person in the DM channel (not myself)
+                  const other =
+                    c.members && c.members.length > 0
+                      ? (c.members.find((m) => m.id !== meId) ?? c.members[0])
+                      : undefined;
 
-                // 1) Presence first by id
-                let presenceUser =
-                  (other && othersOnline.find((u) => u.id === other.id)) ||
-                  (other && recently.find((u) => u.id === other.id)) ||
-                  null;
-
-                // 2) If not, try by channel name (c.name)
-                if (!presenceUser) {
-                  presenceUser =
-                    othersOnline.find((u) => u.displayName === c.name) ||
-                    recently.find((u) => u.displayName === c.name) ||
+                  // 1) Presence first by id
+                  let presenceUser =
+                    (other && othersOnline.find((u) => u.id === other.id)) ||
+                    (other && recently.find((u) => u.id === other.id)) ||
                     null;
-                }
 
-                // 3) Determine status
-                let status: PresenceStatus;
-                if (presenceUser?.status === "idle") {
-                  status = "idle";
-                } else if (presenceUser?.status === "online") {
-                  status = "online";
-                } else if (other) {
-                  status = getUserStatus(other.id);
-                } else {
-                  status = "offline";
-                }
+                  // 2) If not, try by channel name (c.name)
+                  if (!presenceUser) {
+                    presenceUser =
+                      othersOnline.find((u) => u.displayName === c.name) ||
+                      recently.find((u) => u.displayName === c.name) ||
+                      null;
+                  }
 
-                const dotClass = getStatusDotClass(status);
+                  // 3) Determine status
+                  let status: PresenceStatus;
+                  if (presenceUser?.status === "idle") {
+                    status = "idle";
+                  } else if (presenceUser?.status === "online") {
+                    status = "online";
+                  } else if (other) {
+                    status = getUserStatus(other.id);
+                  } else {
+                    status = "offline";
+                  }
 
-                // 4) Name + avatar-url
-                const displayName =
-                  presenceUser?.displayName ?? other?.displayName ?? c.name;
+                  const dotClass = getStatusDotClass(status);
 
-                const avatarUrl =
-                  presenceUser?.avatarUrl ?? other?.avatarUrl ?? null;
+                  // 4) Name + avatar-url
+                  const displayName =
+                    presenceUser?.displayName ?? other?.displayName ?? c.name;
 
-                const hasKnownUser = !!(presenceUser || other);
+                  const avatarUrl =
+                    presenceUser?.avatarUrl ?? other?.avatarUrl ?? null;
+
+                  const hasKnownUser = !!(presenceUser || other);
 
                   return (
                     <button
@@ -294,31 +299,33 @@ export function Sidebar({
                           ? "bg-indigo-50 text-indigo-700 border-indigo-200 font-medium"
                           : "hover:bg-neutral-100 border-transparent text-neutral-800"
                       }`}
-                  >
-                    <div className="flex items-center gap-2 min-w-0">
-                      {hasKnownUser ? (
-                        <div className="relative">
-                          <Avatar
-                            name={displayName}
-                            avatarUrl={avatarUrl}
-                            size={22}
-                          />
-                          <span
-                            className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border border-white ${dotClass}`}
-                          />
-                        </div>
-                      ) : (
-                        <span className="text-lg">💬</span>
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        {hasKnownUser ? (
+                          <div className="relative">
+                            <Avatar
+                              name={displayName}
+                              avatarUrl={avatarUrl}
+                              size={22}
+                            />
+                            <span
+                              className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border border-white ${dotClass}`}
+                            />
+                          </div>
+                        ) : (
+                          <span className="text-lg">💬</span>
+                        )}
+
+                        <span className="min-w-0 flex-1 truncate">
+                          {c.name}
+                        </span>
+                      </div>
+
+                      {(c.unread ?? 0) > 0 && (
+                        <span className="ml-2 shrink-0 inline-flex items-center justify-center rounded-full bg-indigo-500 text-white text-[10px] font-semibold min-w-[1rem] h-4 px-[5px] leading-none shadow-sm">
+                          {c.unread}
+                        </span>
                       )}
-
-                      <span className="min-w-0 flex-1 truncate">{c.name}</span>
-                    </div>
-
-                    {(c.unread ?? 0) > 0 && (
-                      <span className="ml-2 shrink-0 inline-flex items-center justify-center rounded-full bg-indigo-500 text-white text-[10px] font-semibold min-w-[1rem] h-4 px-[5px] leading-none shadow-sm">
-                        {c.unread}
-                      </span>
-                    )}
                     </button>
                   );
                 })

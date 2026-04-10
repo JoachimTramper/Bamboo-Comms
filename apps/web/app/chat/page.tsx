@@ -121,6 +121,46 @@ function getLatestConversationActivityAt(conversation: SupportConversation) {
   );
 }
 
+function getSupportCreateErrorMessage(error: any) {
+  const status = error?.response?.status;
+  const message =
+    typeof error?.response?.data?.message === "string"
+      ? error.response.data.message
+      : null;
+
+  if (error?.code === "ECONNABORTED" || !error?.response) {
+    return "Support is taking too long to respond right now. Please try again.";
+  }
+  if (status === 409 && message) return message;
+  if (status === 400) {
+    return "Please add a short message so support knows how to help.";
+  }
+  if (status === 401 || status === 403) {
+    return "Please sign in again before starting a support conversation.";
+  }
+
+  return "We couldn't start your support conversation right now. Please try again.";
+}
+
+function getConversationActionErrorMessage(error: any) {
+  const status = error?.response?.status;
+  const message =
+    typeof error?.response?.data?.message === "string"
+      ? error.response.data.message
+      : null;
+
+  if (error?.code === "ECONNABORTED" || !error?.response) {
+    return "We couldn't save that change right now. Please try again.";
+  }
+  if (status === 404) return "This conversation is no longer available.";
+  if (status === 401 || status === 403) {
+    return "You don't have permission to update this conversation.";
+  }
+  if (message) return message;
+
+  return "We couldn't save that change right now. Please try again.";
+}
+
 function ChatPageContent() {
   const router = useRouter();
   const pathname = usePathname();
@@ -148,6 +188,14 @@ function ChatPageContent() {
   const isAdmin = user?.role === "ADMIN";
   const supportEnabled = !!user;
   const supportConversationParam = searchParams.get("supportConversation");
+  const [activeView, setActiveView] = useState<"chat" | "support">(() => {
+    const queryView = searchParams.get("view");
+    if (queryView === "support" || supportConversationParam) {
+      return "support";
+    }
+
+    return "chat";
+  });
   const {
     setFilters: setConversationFilters,
     conversations,
@@ -158,7 +206,13 @@ function ChatPageContent() {
     setActiveConversation,
     loadingList: conversationsLoading,
     loadingActive: activeConversationLoading,
-  } = useConversations(supportEnabled, supportConversationParam);
+    listError: conversationsError,
+    activeError: activeConversationError,
+  } = useConversations(
+    supportEnabled,
+    supportConversationParam,
+    activeView === "support",
+  );
   const supportStatusFilter = parseSupportStatus(
     searchParams.get("supportStatus"),
   );
@@ -166,14 +220,6 @@ function ChatPageContent() {
     searchParams.get("supportPriority"),
   );
   const supportAssignedToMeOnly = searchParams.get("supportMine") === "1";
-  const [activeView, setActiveView] = useState<"chat" | "support">(() => {
-    const queryView = searchParams.get("view");
-    if (queryView === "support" || supportConversationParam) {
-      return "support";
-    }
-
-    return "chat";
-  });
 
   function replaceQueryParams(updater: (params: URLSearchParams) => void) {
     const nextParams = new URLSearchParams(searchParams.toString());
@@ -230,6 +276,7 @@ function ChatPageContent() {
   const [assistantError, setAssistantError] = useState<string | null>(null);
   const [creatingSupportConversation, setCreatingSupportConversation] =
     useState(false);
+  const [sendingMessage, setSendingMessage] = useState(false);
   const [supportCreateModalOpen, setSupportCreateModalOpen] = useState(false);
   const [supportCreateError, setSupportCreateError] = useState<string | null>(
     null,
@@ -240,8 +287,8 @@ function ChatPageContent() {
     return right - left;
   });
   const existingOpenSupportConversation = !isAdmin
-    ? conversations.find((conversation) => conversation.status === "OPEN") ??
-      null
+    ? (conversations.find((conversation) => conversation.status === "OPEN") ??
+      null)
     : null;
 
   useMobileSidebar(sidebarOpen, setSidebarOpen);
@@ -498,11 +545,7 @@ function ChatPageContent() {
       );
       syncConversationState(updated);
     } catch (e: any) {
-      setConversationActionError(
-        e?.response?.data?.message ??
-          e?.message ??
-          "Failed to update conversation status",
-      );
+      setConversationActionError(getConversationActionErrorMessage(e));
     } finally {
       setUpdatingStatus(false);
     }
@@ -520,11 +563,7 @@ function ChatPageContent() {
       );
       syncConversationState(updated);
     } catch (e: any) {
-      setConversationActionError(
-        e?.response?.data?.message ??
-          e?.message ??
-          "Failed to update conversation assignee",
-      );
+      setConversationActionError(getConversationActionErrorMessage(e));
     } finally {
       setUpdatingAssignment(false);
     }
@@ -574,11 +613,7 @@ function ChatPageContent() {
       setSupportCreateModalOpen(false);
     } catch (error: any) {
       console.error("Failed to create support conversation:", error);
-      setSupportCreateError(
-        error?.response?.data?.message ??
-          error?.message ??
-          "Failed to create support conversation.",
-      );
+      setSupportCreateError(getSupportCreateErrorMessage(error));
     } finally {
       setCreatingSupportConversation(false);
     }
@@ -611,11 +646,7 @@ function ChatPageContent() {
       });
       syncConversationState(updated);
     } catch (e: any) {
-      setConversationActionError(
-        e?.response?.data?.message ??
-          e?.message ??
-          "Failed to update conversation priority",
-      );
+      setConversationActionError(getConversationActionErrorMessage(e));
     } finally {
       setUpdatingPriority(false);
     }
@@ -630,11 +661,7 @@ function ChatPageContent() {
       const updated = await updateConversation(activeConversationId, { tags });
       syncConversationState(updated);
     } catch (e: any) {
-      setConversationActionError(
-        e?.response?.data?.message ??
-          e?.message ??
-          "Failed to update conversation tags",
-      );
+      setConversationActionError(getConversationActionErrorMessage(e));
     } finally {
       setUpdatingTags(false);
     }
@@ -655,11 +682,7 @@ function ChatPageContent() {
       });
       syncConversationState(updated);
     } catch (e: any) {
-      setConversationActionError(
-        e?.response?.data?.message ??
-          e?.message ??
-          "Failed to update conversation escalation",
-      );
+      setConversationActionError(getConversationActionErrorMessage(e));
     } finally {
       setUpdatingEscalation(false);
     }
@@ -672,7 +695,7 @@ function ChatPageContent() {
 
   // ---- handlers ----
   async function handleSend(files: File[] = []) {
-    if (!messageChannelId) return;
+    if (!messageChannelId || sendingMessage) return;
 
     const trimmed = text.trim();
     const hasText = trimmed.length > 0;
@@ -682,6 +705,7 @@ function ChatPageContent() {
     if (!hasText && !hasFiles) return;
 
     try {
+      setSendingMessage(true);
       const mentions = extractMentionUserIds(text, mentionCandidates);
 
       // 1) Upload all files
@@ -722,6 +746,9 @@ function ChatPageContent() {
       });
     } catch (e) {
       console.error("Failed to send message:", e);
+      throw e;
+    } finally {
+      setSendingMessage(false);
     }
   }
 
@@ -897,9 +924,7 @@ function ChatPageContent() {
             isAdmin={user.role === "ADMIN"}
             creatingSupportConversation={creatingSupportConversation}
             onCreateSupportConversation={
-              user.role === "ADMIN"
-                ? undefined
-                : handleOpenSupportCreate
+              user.role === "ADMIN" ? undefined : handleOpenSupportCreate
             }
             supportCreateError={supportCreateError}
             conversations={sortedConversations}
@@ -946,6 +971,7 @@ function ChatPageContent() {
               });
             }}
             conversationsLoading={conversationsLoading}
+            conversationsError={conversationsError}
           />
         </div>
 
@@ -993,7 +1019,12 @@ function ChatPageContent() {
                 !activeConversationLoading &&
                 (!activeConversation ? (
                   <div className="flex-1 grid place-items-center px-6 text-center text-sm text-neutral-500">
-                    Select a support conversation from the inbox to view it.
+                    {activeConversationError ??
+                      (sortedConversations.length === 0
+                        ? isAdmin
+                          ? "No support conversations yet. New customer threads will appear here."
+                          : "Start a support conversation when you need help."
+                        : "Select a support conversation from the inbox to view it.")}
                   </div>
                 ) : !supportChannelId ? (
                   <div className="flex-1 grid place-items-center px-6 text-center text-sm text-neutral-500">
@@ -1032,63 +1063,91 @@ function ChatPageContent() {
                     }
                     lastReadMessageIdByOthers={lastReadMessageIdByOthers}
                     scrollToMessageId={scrollToMessageId}
-                  onScrolledToMessage={() => setScrollToMessageId(null)}
-                  loadingOlder={loadingOlder}
-                  onRetrySend={retrySend}
-                  paddingTopClassName={activeView === "support" ? "pt-0" : undefined}
-                  headerContent={
-                    activeView === "support" && activeConversation ? (
-                      <>
-                        <SupportConversationHeader conversation={activeConversation} />
-                        <SupportConversationMeta conversation={activeConversation} />
-                        {user.role === "ADMIN" && (
-                          <>
-                            <ConversationControls
-                              conversation={activeConversation}
-                              me={{ id: user.sub, displayName: user.displayName }}
-                              canManage={user.role === "ADMIN"}
-                              updatingStatus={updatingStatus}
-                              updatingAssignment={updatingAssignment}
-                              updatingPriority={updatingPriority}
-                              updatingTags={updatingTags}
-                              updatingEscalation={updatingEscalation}
-                              onTransition={handleTransitionConversation}
-                              onAssign={handleAssignConversation}
-                              onPriorityChange={handleUpdateConversationPriority}
-                              onTagsChange={handleUpdateConversationTags}
-                              onEscalationChange={handleUpdateConversationEscalation}
-                            />
-                            <SupportAssistantPanel
-                              draft={assistantDraft}
-                              generatedAt={assistantDraftAt}
-                              confidence={assistantConfidence}
-                              confidenceHint={assistantConfidenceHint}
-                              instructions={assistantInstructions}
-                              loading={assistantLoading}
-                              error={assistantError}
-                              onInstructionsChange={setAssistantInstructions}
-                              onGenerate={handleGenerateDraft}
-                              onUseDraft={handleUseDraft}
-                              onClearDraft={() => {
-                                setAssistantDraft("");
-                                setAssistantDraftAt(null);
-                                setAssistantConfidence(null);
-                                setAssistantConfidenceHint(null);
-                                setAssistantError(null);
-                              }}
-                            />
-                            {conversationActionError && (
-                              <div className="border-b border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700">
-                                {conversationActionError}
-                              </div>
-                            )}
-                          </>
-                        )}
-                      </>
-                    ) : null
-                  }
-                />
-              )}
+                    onScrolledToMessage={() => setScrollToMessageId(null)}
+                    loadingOlder={loadingOlder}
+                    onRetrySend={retrySend}
+                    paddingTopClassName={
+                      activeView === "support" ? "pt-0" : undefined
+                    }
+                    emptyState={
+                      activeView === "support" ? (
+                        <div className="flex items-center justify-center px-4 py-12">
+                          <div className="max-w-md rounded-2xl border border-dashed border-stone-300 bg-white/80 px-5 py-4 text-center text-sm text-neutral-600 shadow-sm">
+                            <div className="font-medium text-neutral-900">
+                              No messages in this support conversation yet.
+                            </div>
+                            <div className="mt-1 text-xs leading-5 text-neutral-500">
+                              When the customer or support team replies, the
+                              conversation will appear here.
+                            </div>
+                          </div>
+                        </div>
+                      ) : undefined
+                    }
+                    headerContent={
+                      activeView === "support" && activeConversation ? (
+                        <>
+                          <SupportConversationHeader
+                            conversation={activeConversation}
+                          />
+                          <SupportConversationMeta
+                            conversation={activeConversation}
+                          />
+                          {user.role === "ADMIN" && (
+                            <>
+                              <ConversationControls
+                                conversation={activeConversation}
+                                me={{
+                                  id: user.sub,
+                                  displayName: user.displayName,
+                                }}
+                                canManage={user.role === "ADMIN"}
+                                updatingStatus={updatingStatus}
+                                updatingAssignment={updatingAssignment}
+                                updatingPriority={updatingPriority}
+                                updatingTags={updatingTags}
+                                updatingEscalation={updatingEscalation}
+                                onTransition={handleTransitionConversation}
+                                onAssign={handleAssignConversation}
+                                onPriorityChange={
+                                  handleUpdateConversationPriority
+                                }
+                                onTagsChange={handleUpdateConversationTags}
+                                onEscalationChange={
+                                  handleUpdateConversationEscalation
+                                }
+                              />
+                              <SupportAssistantPanel
+                                draft={assistantDraft}
+                                generatedAt={assistantDraftAt}
+                                confidence={assistantConfidence}
+                                confidenceHint={assistantConfidenceHint}
+                                instructions={assistantInstructions}
+                                loading={assistantLoading}
+                                error={assistantError}
+                                onInstructionsChange={setAssistantInstructions}
+                                onGenerate={handleGenerateDraft}
+                                onUseDraft={handleUseDraft}
+                                onClearDraft={() => {
+                                  setAssistantDraft("");
+                                  setAssistantDraftAt(null);
+                                  setAssistantConfidence(null);
+                                  setAssistantConfidenceHint(null);
+                                  setAssistantError(null);
+                                }}
+                              />
+                              {conversationActionError && (
+                                <div className="border-b border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700">
+                                  {conversationActionError}
+                                </div>
+                              )}
+                            </>
+                          )}
+                        </>
+                      ) : null
+                    }
+                  />
+                )}
             </div>
           </div>
 
@@ -1103,11 +1162,31 @@ function ChatPageContent() {
                   replyTo={replyTo}
                   onCancelReply={() => setReplyTo(null)}
                   mentionCandidates={mentionCandidates}
+                  loading={sendingMessage}
                 />
               )}
           </div>
         </main>
       </div>
+
+      {!isAdmin && (
+        <section className="fixed bottom-24 right-5 z-40 hidden w-[19rem] rounded-2xl border border-indigo-200 bg-indigo-50/95 p-4 shadow-xl backdrop-blur md:block">
+          <div className="text-sm font-semibold text-neutral-900">
+            Need support?
+          </div>
+          <div className="mt-1 text-xs leading-5 text-neutral-600">
+            Create a support conversation so the admin inbox can pick it up.
+          </div>
+          <button
+            type="button"
+            onClick={handleOpenSupportCreate}
+            disabled={creatingSupportConversation}
+            className="mt-3 inline-flex w-full items-center justify-center rounded-xl border border-indigo-200 bg-white px-3 py-2 text-sm font-medium text-indigo-700 transition-colors hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Start Support Conversation
+          </button>
+        </section>
+      )}
 
       <SearchModal
         open={searchOpen && activeView === "chat"}

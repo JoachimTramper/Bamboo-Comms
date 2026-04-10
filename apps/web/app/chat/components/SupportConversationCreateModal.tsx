@@ -8,7 +8,10 @@ type Props = {
   loading?: boolean;
   error?: string | null;
   onClose: () => void;
-  onSubmit: (input: { subject?: string; message: string }) => Promise<void> | void;
+  onSubmit: (input: {
+    subject?: string;
+    message: string;
+  }) => Promise<void> | void;
 };
 
 export function SupportConversationCreateModal({
@@ -57,7 +60,7 @@ export function SupportConversationCreateModal({
 
   return (
     <div
-      className="fixed inset-0 z-40 flex items-center justify-center bg-black/45 px-3 backdrop-blur-sm"
+      className="fixed inset-0 z-[90] flex items-center justify-center bg-black/45 px-3 backdrop-blur-sm"
       onClick={() => {
         if (!loading) onClose();
       }}
@@ -66,7 +69,7 @@ export function SupportConversationCreateModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="support-create-title"
-        className="w-full max-w-lg overflow-hidden rounded-2xl border border-stone-200 bg-stone-50 shadow-2xl"
+        className="relative z-[91] w-full max-w-lg overflow-hidden rounded-2xl border border-stone-200 bg-stone-50 shadow-2xl"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-stone-200 bg-white/80 px-5 py-4">
@@ -143,7 +146,7 @@ export function SupportConversationCreateModal({
             </button>
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || !trimmedMessage}
               className="rounded-xl border border-indigo-600 bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {loading ? "Creating..." : "Create Conversation"}

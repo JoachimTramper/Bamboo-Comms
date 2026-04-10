@@ -128,6 +128,7 @@ export type SupportConversation = {
   escalatedAt: string | null;
   primaryChannelId: string | null;
   messageCount: number;
+  unread?: number;
   customerId?: string | null;
   assigneeId?: string | null;
   customer?: {
