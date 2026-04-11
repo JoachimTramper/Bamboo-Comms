@@ -1,15 +1,21 @@
 "use client";
 
 import {
+  Suspense,
   useRef,
   useState,
   useEffect,
   type UIEvent,
   type ChangeEvent,
 } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import {
+  assignConversation,
+  createCustomerSupportConversation,
+  generateConversationDraft,
+  transitionConversation,
+  updateConversation,
   logout,
   updateAvatar,
   uploadAvatarFile,
@@ -23,7 +29,14 @@ import {
   showBrowserNotification,
 } from "@/lib/notifications";
 
-import type { Message, Me } from "./types";
+import type {
+  ConversationPriority,
+  ConversationLifecycleAction,
+  ConversationStatus,
+  Message,
+  Me,
+  SupportConversation,
+} from "./types";
 
 import { MessageList } from "./components/MessageList";
 import { Composer } from "./components/Composer";
@@ -32,6 +45,11 @@ import { ChatHeader } from "./components/ChatHeader";
 import { TypingIndicator } from "./components/TypingIndicator";
 import { SearchModal } from "./components/SearchModal";
 import { ChatTitleBubble } from "./components/ChatTitleBubble";
+import { SupportConversationHeader } from "./components/SupportConversationHeader";
+import { SupportConversationMeta } from "./components/SupportConversationMeta";
+import { SupportAssistantPanel } from "./components/SupportAssistantPanel";
+import { ConversationControls } from "./components/ConversationControls";
+import { SupportConversationCreateModal } from "./components/SupportConversationCreateModal";
 
 import { useMessages } from "./hooks/useMessages";
 import { useTyping } from "./hooks/useTyping";
@@ -44,6 +62,7 @@ import { useMentionCandidates } from "./hooks/useMentionCandidates";
 // refactor hooks
 import { useAuthGuard } from "./hooks/useAuthGuard";
 import { useChannels } from "./hooks/useChannels";
+import { useConversations } from "./hooks/useConversations";
 import { useDisplayNameResolver } from "./hooks/useDisplayNameResolver";
 
 import {
@@ -58,8 +77,94 @@ type ReplyTarget = {
   content: string | null;
 };
 
-export default function ChatPage() {
+const SUPPORT_STATUS_VALUES: ConversationStatus[] = [
+  "OPEN",
+  "PENDING",
+  "RESOLVED",
+  "CLOSED",
+];
+
+const SUPPORT_PRIORITY_VALUES: ConversationPriority[] = [
+  "LOW",
+  "NORMAL",
+  "HIGH",
+  "URGENT",
+];
+
+function parseSupportStatus(value: string | null): ConversationStatus | "ALL" {
+  if (value && SUPPORT_STATUS_VALUES.includes(value as ConversationStatus)) {
+    return value as ConversationStatus;
+  }
+
+  return "ALL";
+}
+
+function parseSupportPriority(
+  value: string | null,
+): ConversationPriority | "ALL" {
+  if (
+    value &&
+    SUPPORT_PRIORITY_VALUES.includes(value as ConversationPriority)
+  ) {
+    return value as ConversationPriority;
+  }
+
+  return "ALL";
+}
+
+function getLatestConversationActivityAt(conversation: SupportConversation) {
+  return (
+    conversation.lastMessageAt ??
+    conversation.latestMessagePreview?.createdAt ??
+    conversation.updatedAt ??
+    conversation.createdAt
+  );
+}
+
+function getSupportCreateErrorMessage(error: any) {
+  const status = error?.response?.status;
+  const message =
+    typeof error?.response?.data?.message === "string"
+      ? error.response.data.message
+      : null;
+
+  if (error?.code === "ECONNABORTED" || !error?.response) {
+    return "Support is taking too long to respond right now. Please try again.";
+  }
+  if (status === 409 && message) return message;
+  if (status === 400) {
+    return "Please add a short message so support knows how to help.";
+  }
+  if (status === 401 || status === 403) {
+    return "Please sign in again before starting a support conversation.";
+  }
+
+  return "We couldn't start your support conversation right now. Please try again.";
+}
+
+function getConversationActionErrorMessage(error: any) {
+  const status = error?.response?.status;
+  const message =
+    typeof error?.response?.data?.message === "string"
+      ? error.response.data.message
+      : null;
+
+  if (error?.code === "ECONNABORTED" || !error?.response) {
+    return "We couldn't save that change right now. Please try again.";
+  }
+  if (status === 404) return "This conversation is no longer available.";
+  if (status === 401 || status === 403) {
+    return "You don't have permission to update this conversation.";
+  }
+  if (message) return message;
+
+  return "We couldn't save that change right now. Please try again.";
+}
+
+function ChatPageContent() {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
 
   // --- auth ---
   const { user, setUser } = useAuthGuard();
@@ -79,6 +184,56 @@ export default function ChatPage() {
     onCreateChannel,
     openDM,
   } = useChannels(user);
+
+  const isAdmin = user?.role === "ADMIN";
+  const supportEnabled = !!user;
+  const supportConversationParam = searchParams.get("supportConversation");
+  const [activeView, setActiveView] = useState<"chat" | "support">(() => {
+    const queryView = searchParams.get("view");
+    if (queryView === "support" || supportConversationParam) {
+      return "support";
+    }
+
+    return "chat";
+  });
+  const {
+    setFilters: setConversationFilters,
+    conversations,
+    setConversations,
+    activeConversationId,
+    setActiveConversationId,
+    activeConversation,
+    setActiveConversation,
+    loadingList: conversationsLoading,
+    loadingActive: activeConversationLoading,
+    listError: conversationsError,
+    activeError: activeConversationError,
+  } = useConversations(
+    supportEnabled,
+    supportConversationParam,
+    activeView === "support",
+  );
+  const supportStatusFilter = parseSupportStatus(
+    searchParams.get("supportStatus"),
+  );
+  const supportPriorityFilter = parseSupportPriority(
+    searchParams.get("supportPriority"),
+  );
+  const supportAssignedToMeOnly = searchParams.get("supportMine") === "1";
+
+  function replaceQueryParams(updater: (params: URLSearchParams) => void) {
+    const nextParams = new URLSearchParams(searchParams.toString());
+    updater(nextParams);
+
+    const currentQuery = searchParams.toString();
+    const nextQuery = nextParams.toString();
+
+    if (currentQuery === nextQuery) return;
+
+    router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname, {
+      scroll: false,
+    });
+  }
 
   // Persist active channel in localStorage
   function setActiveAndPersist(id: string) {
@@ -100,12 +255,63 @@ export default function ChatPage() {
     null,
   );
   const [searchOpen, setSearchOpen] = useState(false);
+  const [conversationActionError, setConversationActionError] = useState<
+    string | null
+  >(null);
+  const [updatingStatus, setUpdatingStatus] = useState(false);
+  const [updatingAssignment, setUpdatingAssignment] = useState(false);
+  const [updatingPriority, setUpdatingPriority] = useState(false);
+  const [updatingTags, setUpdatingTags] = useState(false);
+  const [updatingEscalation, setUpdatingEscalation] = useState(false);
+  const [assistantInstructions, setAssistantInstructions] = useState("");
+  const [assistantDraft, setAssistantDraft] = useState("");
+  const [assistantDraftAt, setAssistantDraftAt] = useState<string | null>(null);
+  const [assistantConfidence, setAssistantConfidence] = useState<
+    "HIGH" | "MEDIUM" | "LOW" | null
+  >(null);
+  const [assistantConfidenceHint, setAssistantConfidenceHint] = useState<
+    string | null
+  >(null);
+  const [assistantLoading, setAssistantLoading] = useState(false);
+  const [assistantError, setAssistantError] = useState<string | null>(null);
+  const [creatingSupportConversation, setCreatingSupportConversation] =
+    useState(false);
+  const [sendingMessage, setSendingMessage] = useState(false);
+  const [supportCreateModalOpen, setSupportCreateModalOpen] = useState(false);
+  const [supportCreateError, setSupportCreateError] = useState<string | null>(
+    null,
+  );
+  const sortedConversations = [...conversations].sort((a, b) => {
+    const left = new Date(getLatestConversationActivityAt(a)).getTime();
+    const right = new Date(getLatestConversationActivityAt(b)).getTime();
+    return right - left;
+  });
+  const existingOpenSupportConversation = !isAdmin
+    ? (conversations.find((conversation) => conversation.status === "OPEN") ??
+      null)
+    : null;
 
   useMobileSidebar(sidebarOpen, setSidebarOpen);
 
   // --- presence / typing / unread ---
   const { othersOnline, recently } = usePresence(user?.sub);
-  const { label: typingLabel, emitTyping } = useTyping(active, user?.sub);
+  const supportChannelId = activeConversation?.primaryChannelId ?? null;
+  const messageChannelId = activeView === "support" ? supportChannelId : active;
+  const selectedConversationId =
+    activeView === "support" ? activeConversationId : null;
+  const showSupportThread =
+    activeView === "support" &&
+    !!activeConversation &&
+    !!supportChannelId &&
+    !!messageChannelId;
+
+  const { label: typingLabel, emitTyping } = useTyping(
+    {
+      channelId: messageChannelId,
+      conversationId: selectedConversationId,
+    },
+    user?.sub,
+  );
 
   useUnread({ active, myId: user?.sub, setChannels });
 
@@ -144,7 +350,8 @@ export default function ChatPage() {
     hasMore,
     lastReadMessageIdByOthers,
     retrySend,
-  } = useMessages(active, user?.sub, {
+  } = useMessages(messageChannelId, user?.sub, {
+    conversationId: selectedConversationId,
     lastReadSnapshot: activeChannel?.lastRead ?? null,
     resolveDisplayName,
     onIncomingMessage: (msg) => {
@@ -153,7 +360,7 @@ export default function ChatPage() {
       // skip own messages
       if (msg.authorId === user.sub) return;
 
-      const isDifferentChannel = msg.channelId !== active;
+      const isDifferentChannel = msg.channelId !== messageChannelId;
       const isMentioned = msg.mentions?.some((m) => m.userId === user.sub);
 
       if (isMentioned && isDifferentChannel) {
@@ -182,8 +389,109 @@ export default function ChatPage() {
   }, [user?.sub, channels, setActive]);
 
   useEffect(() => {
+    if (!isAdmin) return;
+    setConversationFilters({
+      status: supportStatusFilter === "ALL" ? undefined : supportStatusFilter,
+      priority:
+        supportPriorityFilter === "ALL" ? undefined : supportPriorityFilter,
+      assigneeId: supportAssignedToMeOnly ? user?.sub : undefined,
+    });
+  }, [
+    isAdmin,
+    setConversationFilters,
+    supportAssignedToMeOnly,
+    supportPriorityFilter,
+    supportStatusFilter,
+    user?.sub,
+  ]);
+
+  useEffect(() => {
+    const queryView = searchParams.get("view");
+    if (queryView === "support" || supportConversationParam) {
+      setActiveView("support");
+      return;
+    }
+
+    if (queryView === "chat") {
+      setActiveView("chat");
+    }
+  }, [searchParams, supportConversationParam]);
+
+  useEffect(() => {
+    if (!conversations.length) return;
+    if (!supportConversationParam) return;
+    if (!conversations.some((item) => item.id === supportConversationParam)) {
+      return;
+    }
+    if (
+      activeConversationId &&
+      conversations.some((item) => item.id === activeConversationId)
+    ) {
+      return;
+    }
+
+    setActiveConversationId(supportConversationParam);
+  }, [
+    activeConversationId,
+    conversations,
+    setActiveConversationId,
+    supportConversationParam,
+  ]);
+
+  useEffect(() => {
+    const nextParams = new URLSearchParams(searchParams.toString());
+
+    nextParams.set("view", activeView);
+
+    if (activeView === "support" && activeConversationId) {
+      nextParams.set("supportConversation", activeConversationId);
+    } else if (activeView !== "support") {
+      nextParams.delete("supportConversation");
+    }
+
+    if (supportStatusFilter === "ALL") {
+      nextParams.delete("supportStatus");
+    } else {
+      nextParams.set("supportStatus", supportStatusFilter);
+    }
+
+    if (supportPriorityFilter === "ALL") {
+      nextParams.delete("supportPriority");
+    } else {
+      nextParams.set("supportPriority", supportPriorityFilter);
+    }
+
+    if (supportAssignedToMeOnly) {
+      nextParams.set("supportMine", "1");
+    } else {
+      nextParams.delete("supportMine");
+    }
+
+    nextParams.set("supportSort", "latest_activity");
+
+    const currentQuery = searchParams.toString();
+    const nextQuery = nextParams.toString();
+
+    if (currentQuery === nextQuery) return;
+
+    router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname, {
+      scroll: false,
+    });
+  }, [
+    activeConversationId,
+    activeView,
+    pathname,
+    router,
+    searchParams,
+    supportAssignedToMeOnly,
+    supportPriorityFilter,
+    supportStatusFilter,
+  ]);
+
+  useEffect(() => {
     if (!active) return;
     if (!user?.sub) return;
+    if (activeView !== "chat") return;
 
     markChannelRead(active)
       .then((res) => {
@@ -197,11 +505,197 @@ export default function ChatPage() {
         );
       })
       .catch(() => {});
-  }, [active, user?.sub, setChannels]);
+  }, [active, activeView, user?.sub, setChannels]);
+
+  useEffect(() => {
+    setReplyTo(null);
+    setSearchOpen(false);
+    setConversationActionError(null);
+    setAssistantDraft("");
+    setAssistantDraftAt(null);
+    setAssistantConfidence(null);
+    setAssistantConfidenceHint(null);
+    setAssistantError(null);
+  }, [activeView, activeConversationId, active]);
+
+  function syncConversationState(
+    nextConversation: Exclude<typeof activeConversation, null>,
+  ) {
+    setActiveConversation(nextConversation);
+    setConversations((prev) =>
+      prev.map((item) =>
+        item.id === nextConversation.id
+          ? { ...item, ...nextConversation }
+          : item,
+      ),
+    );
+  }
+
+  async function handleTransitionConversation(
+    action: ConversationLifecycleAction,
+  ) {
+    if (!activeConversationId) return;
+
+    try {
+      setConversationActionError(null);
+      setUpdatingStatus(true);
+      const updated = await transitionConversation(
+        activeConversationId,
+        action,
+      );
+      syncConversationState(updated);
+    } catch (e: any) {
+      setConversationActionError(getConversationActionErrorMessage(e));
+    } finally {
+      setUpdatingStatus(false);
+    }
+  }
+
+  async function handleAssignConversation(assigneeId?: string | null) {
+    if (!activeConversationId) return;
+
+    try {
+      setConversationActionError(null);
+      setUpdatingAssignment(true);
+      const updated = await assignConversation(
+        activeConversationId,
+        assigneeId,
+      );
+      syncConversationState(updated);
+    } catch (e: any) {
+      setConversationActionError(getConversationActionErrorMessage(e));
+    } finally {
+      setUpdatingAssignment(false);
+    }
+  }
+
+  async function handleGenerateDraft() {
+    if (!activeConversationId) return;
+
+    try {
+      setAssistantError(null);
+      setAssistantLoading(true);
+      const result = await generateConversationDraft(
+        activeConversationId,
+        assistantInstructions,
+      );
+      setAssistantDraft(result.draft ?? "");
+      setAssistantDraftAt(result.generatedAt ?? null);
+      setAssistantConfidence(result.confidence ?? null);
+      setAssistantConfidenceHint(result.confidenceHint ?? null);
+    } catch (e: any) {
+      setAssistantError(
+        e?.response?.data?.message ?? e?.message ?? "Failed to generate draft",
+      );
+    } finally {
+      setAssistantLoading(false);
+    }
+  }
+
+  async function handleCreateSupportConversation(input: {
+    subject?: string;
+    message: string;
+  }) {
+    try {
+      setSupportCreateError(null);
+      setCreatingSupportConversation(true);
+      const conversation = await createCustomerSupportConversation(input);
+      setConversations((prev) =>
+        prev.some((item) => item.id === conversation.id)
+          ? prev.map((item) =>
+              item.id === conversation.id ? { ...item, ...conversation } : item,
+            )
+          : [conversation, ...prev],
+      );
+      setActiveConversation(conversation);
+      setActiveConversationId(conversation.id);
+      setActiveView("support");
+      setSupportCreateModalOpen(false);
+    } catch (error: any) {
+      console.error("Failed to create support conversation:", error);
+      setSupportCreateError(getSupportCreateErrorMessage(error));
+    } finally {
+      setCreatingSupportConversation(false);
+    }
+  }
+
+  function handleOpenSupportCreate() {
+    if (existingOpenSupportConversation) {
+      setSupportCreateError(
+        "You already have an open support conversation. Please use the existing thread before starting another.",
+      );
+      setActiveConversationId(existingOpenSupportConversation.id);
+      setActiveView("support");
+      return;
+    }
+
+    setSupportCreateError(null);
+    setSupportCreateModalOpen(true);
+  }
+
+  async function handleUpdateConversationPriority(
+    priority: Exclude<typeof activeConversation, null>["priority"],
+  ) {
+    if (!activeConversationId) return;
+
+    try {
+      setConversationActionError(null);
+      setUpdatingPriority(true);
+      const updated = await updateConversation(activeConversationId, {
+        priority,
+      });
+      syncConversationState(updated);
+    } catch (e: any) {
+      setConversationActionError(getConversationActionErrorMessage(e));
+    } finally {
+      setUpdatingPriority(false);
+    }
+  }
+
+  async function handleUpdateConversationTags(tags: string[]) {
+    if (!activeConversationId) return;
+
+    try {
+      setConversationActionError(null);
+      setUpdatingTags(true);
+      const updated = await updateConversation(activeConversationId, { tags });
+      syncConversationState(updated);
+    } catch (e: any) {
+      setConversationActionError(getConversationActionErrorMessage(e));
+    } finally {
+      setUpdatingTags(false);
+    }
+  }
+
+  async function handleUpdateConversationEscalation(next: {
+    isEscalated: boolean;
+    escalationReason?: string | null;
+  }) {
+    if (!activeConversationId) return;
+
+    try {
+      setConversationActionError(null);
+      setUpdatingEscalation(true);
+      const updated = await updateConversation(activeConversationId, {
+        isEscalated: next.isEscalated,
+        escalationReason: next.escalationReason ?? null,
+      });
+      syncConversationState(updated);
+    } catch (e: any) {
+      setConversationActionError(getConversationActionErrorMessage(e));
+    } finally {
+      setUpdatingEscalation(false);
+    }
+  }
+
+  function handleUseDraft() {
+    if (!assistantDraft) return;
+    setText(assistantDraft);
+  }
 
   // ---- handlers ----
   async function handleSend(files: File[] = []) {
-    if (!active) return;
+    if (!messageChannelId || sendingMessage) return;
 
     const trimmed = text.trim();
     const hasText = trimmed.length > 0;
@@ -211,6 +705,7 @@ export default function ChatPage() {
     if (!hasText && !hasFiles) return;
 
     try {
+      setSendingMessage(true);
       const mentions = extractMentionUserIds(text, mentionCandidates);
 
       // 1) Upload all files
@@ -251,6 +746,9 @@ export default function ChatPage() {
       });
     } catch (e) {
       console.error("Failed to send message:", e);
+      throw e;
+    } finally {
+      setSendingMessage(false);
     }
   }
 
@@ -296,7 +794,11 @@ export default function ChatPage() {
 
   function handleTypingInput(v: string) {
     setText(v);
-    if (active && user) emitTyping(active);
+    if (!user) return;
+    emitTyping({
+      channelId: messageChannelId,
+      conversationId: selectedConversationId,
+    });
   }
 
   function handleLogout() {
@@ -364,7 +866,7 @@ export default function ChatPage() {
     <div className="fixed inset-0 overflow-hidden flex flex-col">
       <ChatHeader
         user={user}
-        activeChannel={activeChannel}
+        activeChannel={activeView === "chat" ? activeChannel : undefined}
         fileInputRef={fileInputRef}
         avatarUploading={avatarUploading}
         onAvatarChange={handleAvatarFileChange}
@@ -376,9 +878,15 @@ export default function ChatPage() {
         onEnableNotifications={() => ensureNotificationPermission()}
         onOpenSearch={() => setSearchOpen(true)}
         onChangeUsername={handleChangeUsername}
+        centerTitle={
+          activeView === "support"
+            ? (activeConversation?.subject ?? "Support inbox")
+            : undefined
+        }
+        searchDisabled={activeView === "support"}
       />
 
-      <div className="flex-1 min-h-0 flex relative md:bg-stone-100">
+      <div className="relative flex min-h-0 flex-1 md:bg-stone-100">
         {sidebarOpen && (
           <div
             className="fixed inset-0 bg-black/30 z-40 md:hidden"
@@ -388,7 +896,7 @@ export default function ChatPage() {
 
         <div
           className={`
-            absolute inset-y-0 left-0 z-50 w-64 bg-stone-100
+            absolute inset-y-0 left-0 z-50 w-[min(20rem,calc(100vw-1rem))] bg-stone-100
             transform transition-transform duration-200 ease-out
             ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}
             md:static md:translate-x-0 md:w-72 md:bg-stone-100 md:h-full md:block
@@ -400,6 +908,7 @@ export default function ChatPage() {
             dmChannels={dmChannels}
             active={active}
             setActive={(id) => {
+              setActiveView("chat");
               setActiveAndPersist(id);
               setSidebarOpen(false);
             }}
@@ -413,6 +922,56 @@ export default function ChatPage() {
             formatLastOnline={formatLastOnline}
             meId={user.sub}
             isAdmin={user.role === "ADMIN"}
+            creatingSupportConversation={creatingSupportConversation}
+            onCreateSupportConversation={
+              user.role === "ADMIN" ? undefined : handleOpenSupportCreate
+            }
+            supportCreateError={supportCreateError}
+            conversations={sortedConversations}
+            activeConversationId={
+              activeView === "support" ? activeConversationId : null
+            }
+            onSelectConversation={(conversationId) => {
+              setSupportCreateError(null);
+              setActiveView("support");
+              setActiveConversationId(conversationId);
+              setSidebarOpen(false);
+            }}
+            supportStatusFilter={supportStatusFilter}
+            supportPriorityFilter={supportPriorityFilter}
+            supportAssignedToMeOnly={supportAssignedToMeOnly}
+            onSupportStatusFilterChange={(value) => {
+              replaceQueryParams((params) => {
+                if (value === "ALL") {
+                  params.delete("supportStatus");
+                } else {
+                  params.set("supportStatus", value);
+                }
+                params.delete("supportConversation");
+              });
+            }}
+            onSupportPriorityFilterChange={(value) => {
+              replaceQueryParams((params) => {
+                if (value === "ALL") {
+                  params.delete("supportPriority");
+                } else {
+                  params.set("supportPriority", value);
+                }
+                params.delete("supportConversation");
+              });
+            }}
+            onSupportAssignedToMeOnlyChange={(value) => {
+              replaceQueryParams((params) => {
+                if (value) {
+                  params.set("supportMine", "1");
+                } else {
+                  params.delete("supportMine");
+                }
+                params.delete("supportConversation");
+              });
+            }}
+            conversationsLoading={conversationsLoading}
+            conversationsError={conversationsError}
           />
         </div>
 
@@ -432,66 +991,206 @@ export default function ChatPage() {
             md:shadow-[inset_0_1px_0_rgba(255,255,255,0.4)]
           "
         >
-          <div className="flex-1 min-h-0 relative z-20">
-            {(activeChannel?.isDirect ?? false) ? (
+          <div className="relative z-20 flex-1 min-h-0">
+            {activeView === "chat" && (activeChannel?.isDirect ?? false) ? (
               <div className="absolute top-0 left-0 right-0 z-40">
                 <ChatTitleBubble
                   activeChannel={activeChannel}
                   dmPeer={dmPeer}
                 />
               </div>
-            ) : (
+            ) : activeView === "chat" ? (
               <div className="md:hidden absolute top-0 left-0 right-0 z-40">
                 <ChatTitleBubble
                   activeChannel={activeChannel}
                   dmPeer={dmPeer}
                 />
               </div>
-            )}
+            ) : null}
 
-            <div className="h-full flex flex-col">
-              <MessageList
-                msgs={msgs}
-                meId={user.sub}
-                channelId={active!}
-                listRef={listRef}
-                editingId={editingId}
-                editText={editText}
-                setEditText={setEditText}
-                onStartEdit={(m) => startEdit(m)}
-                onSaveEdit={(m) => active && saveEdit(m.id)}
-                onCancelEdit={cancelEdit}
-                onDelete={(m) => active && removeMessage(m.id)}
-                onReply={(m) => handleReply(m)}
-                formatDateTime={formatDateTime}
-                onScroll={handleScroll}
-                isDirect={activeChannel?.isDirect ?? false}
-                lastReadMessageIdByOthers={lastReadMessageIdByOthers}
-                scrollToMessageId={scrollToMessageId}
-                onScrolledToMessage={() => setScrollToMessageId(null)}
-                loadingOlder={loadingOlder}
-                onRetrySend={retrySend}
-              />
+            <div
+              className={`flex h-full min-h-0 flex-col ${
+                activeView === "support"
+                  ? "bg-[radial-gradient(circle_at_top_left,_rgba(226,232,240,0.9),_rgba(245,245,244,0.92)_42%,_rgba(255,255,255,0.88)_100%)]"
+                  : ""
+              }`}
+            >
+              {activeView === "support" &&
+                !activeConversationLoading &&
+                (!activeConversation ? (
+                  <div className="flex-1 grid place-items-center px-6 text-center text-sm text-neutral-500">
+                    {activeConversationError ??
+                      (sortedConversations.length === 0
+                        ? isAdmin
+                          ? "No support conversations yet. New customer threads will appear here."
+                          : "Start a support conversation when you need help."
+                        : "Select a support conversation from the inbox to view it.")}
+                  </div>
+                ) : !supportChannelId ? (
+                  <div className="flex-1 grid place-items-center px-6 text-center text-sm text-neutral-500">
+                    This conversation does not have a linked message channel
+                    yet.
+                  </div>
+                ) : null)}
+
+              {activeConversationLoading && activeView === "support" && (
+                <div className="flex-1 grid place-items-center px-6 text-sm text-neutral-500">
+                  Loading conversation...
+                </div>
+              )}
+
+              {(activeView === "chat" || showSupportThread) &&
+                messageChannelId && (
+                  <MessageList
+                    msgs={msgs}
+                    meId={user.sub}
+                    channelId={messageChannelId}
+                    listRef={listRef}
+                    editingId={editingId}
+                    editText={editText}
+                    setEditText={setEditText}
+                    onStartEdit={(m) => startEdit(m)}
+                    onSaveEdit={(m) => saveEdit(m.id)}
+                    onCancelEdit={cancelEdit}
+                    onDelete={(m) => removeMessage(m.id)}
+                    onReply={(m) => handleReply(m)}
+                    formatDateTime={formatDateTime}
+                    onScroll={handleScroll}
+                    isDirect={
+                      activeView === "chat"
+                        ? (activeChannel?.isDirect ?? false)
+                        : false
+                    }
+                    lastReadMessageIdByOthers={lastReadMessageIdByOthers}
+                    scrollToMessageId={scrollToMessageId}
+                    onScrolledToMessage={() => setScrollToMessageId(null)}
+                    loadingOlder={loadingOlder}
+                    onRetrySend={retrySend}
+                    paddingTopClassName={
+                      activeView === "support" ? "pt-0" : undefined
+                    }
+                    emptyState={
+                      activeView === "support" ? (
+                        <div className="flex items-center justify-center px-4 py-12">
+                          <div className="max-w-md rounded-2xl border border-dashed border-stone-300 bg-white/80 px-5 py-4 text-center text-sm text-neutral-600 shadow-sm">
+                            <div className="font-medium text-neutral-900">
+                              No messages in this support conversation yet.
+                            </div>
+                            <div className="mt-1 text-xs leading-5 text-neutral-500">
+                              When the customer or support team replies, the
+                              conversation will appear here.
+                            </div>
+                          </div>
+                        </div>
+                      ) : undefined
+                    }
+                    headerContent={
+                      activeView === "support" && activeConversation ? (
+                        <>
+                          <SupportConversationHeader
+                            conversation={activeConversation}
+                          />
+                          <SupportConversationMeta
+                            conversation={activeConversation}
+                          />
+                          {user.role === "ADMIN" && (
+                            <>
+                              <ConversationControls
+                                conversation={activeConversation}
+                                me={{
+                                  id: user.sub,
+                                  displayName: user.displayName,
+                                }}
+                                canManage={user.role === "ADMIN"}
+                                updatingStatus={updatingStatus}
+                                updatingAssignment={updatingAssignment}
+                                updatingPriority={updatingPriority}
+                                updatingTags={updatingTags}
+                                updatingEscalation={updatingEscalation}
+                                onTransition={handleTransitionConversation}
+                                onAssign={handleAssignConversation}
+                                onPriorityChange={
+                                  handleUpdateConversationPriority
+                                }
+                                onTagsChange={handleUpdateConversationTags}
+                                onEscalationChange={
+                                  handleUpdateConversationEscalation
+                                }
+                              />
+                              <SupportAssistantPanel
+                                draft={assistantDraft}
+                                generatedAt={assistantDraftAt}
+                                confidence={assistantConfidence}
+                                confidenceHint={assistantConfidenceHint}
+                                instructions={assistantInstructions}
+                                loading={assistantLoading}
+                                error={assistantError}
+                                onInstructionsChange={setAssistantInstructions}
+                                onGenerate={handleGenerateDraft}
+                                onUseDraft={handleUseDraft}
+                                onClearDraft={() => {
+                                  setAssistantDraft("");
+                                  setAssistantDraftAt(null);
+                                  setAssistantConfidence(null);
+                                  setAssistantConfidenceHint(null);
+                                  setAssistantError(null);
+                                }}
+                              />
+                              {conversationActionError && (
+                                <div className="border-b border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700">
+                                  {conversationActionError}
+                                </div>
+                              )}
+                            </>
+                          )}
+                        </>
+                      ) : null
+                    }
+                  />
+                )}
             </div>
           </div>
 
           <div className="absolute bottom-0 left-0 right-0 z-30">
             <TypingIndicator label={typingLabel} />
-            <Composer
-              value={text}
-              onChange={handleTypingInput}
-              onSend={handleSend}
-              replyTo={replyTo}
-              onCancelReply={() => setReplyTo(null)}
-              mentionCandidates={mentionCandidates}
-            />
+            {(activeView === "chat" || showSupportThread) &&
+              messageChannelId && (
+                <Composer
+                  value={text}
+                  onChange={handleTypingInput}
+                  onSend={handleSend}
+                  replyTo={replyTo}
+                  onCancelReply={() => setReplyTo(null)}
+                  mentionCandidates={mentionCandidates}
+                  loading={sendingMessage}
+                />
+              )}
           </div>
         </main>
       </div>
 
+      {!isAdmin && (
+        <section className="fixed bottom-24 right-5 z-40 hidden w-[19rem] rounded-2xl border border-indigo-200 bg-indigo-50/95 p-4 shadow-xl backdrop-blur md:block">
+          <div className="text-sm font-semibold text-neutral-900">
+            Need support?
+          </div>
+          <div className="mt-1 text-xs leading-5 text-neutral-600">
+            Create a support conversation so the admin inbox can pick it up.
+          </div>
+          <button
+            type="button"
+            onClick={handleOpenSupportCreate}
+            disabled={creatingSupportConversation}
+            className="mt-3 inline-flex w-full items-center justify-center rounded-xl border border-indigo-200 bg-white px-3 py-2 text-sm font-medium text-indigo-700 transition-colors hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Start Support Conversation
+          </button>
+        </section>
+      )}
+
       <SearchModal
-        open={searchOpen}
-        channelId={active}
+        open={searchOpen && activeView === "chat"}
+        channelId={activeView === "chat" ? active : null}
         activeChannel={activeChannel}
         dmPeerName={dmPeer?.displayName ?? null}
         onClose={() => setSearchOpen(false)}
@@ -500,6 +1199,26 @@ export default function ChatPage() {
           setScrollToMessageId(messageId);
         }}
       />
+
+      <SupportConversationCreateModal
+        open={supportCreateModalOpen}
+        loading={creatingSupportConversation}
+        error={supportCreateError}
+        onClose={() => {
+          if (creatingSupportConversation) return;
+          setSupportCreateModalOpen(false);
+          setSupportCreateError(null);
+        }}
+        onSubmit={handleCreateSupportConversation}
+      />
     </div>
+  );
+}
+
+export default function ChatPage() {
+  return (
+    <Suspense fallback={<div className="min-h-dvh bg-stone-100" />}>
+      <ChatPageContent />
+    </Suspense>
   );
 }

@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { Message } from "../types";
+import type { Message, MessageReaction } from "../types";
 import { reactToMessage, unreactToMessage } from "@/lib/api";
 import {
   autoUpdate,
@@ -23,7 +23,6 @@ type Props = {
 };
 
 const QUICK_EMOJIS = ["👍", "❤️", "😂", "🎉", "👀", "🔥"];
-type Reaction = { emoji: string; userId: string };
 
 function isDomElement(el: unknown): el is Element {
   return !!el && typeof (el as Element).contains === "function";
@@ -38,8 +37,8 @@ export function MessageReactionsBar({
 }: Props) {
   const [loadingEmoji, setLoadingEmoji] = useState<string | null>(null);
 
-  const [localReactions, setLocalReactions] = useState<Reaction[]>(
-    ((message.reactions as any) ?? []) as Reaction[],
+  const [localReactions, setLocalReactions] = useState<MessageReaction[]>(
+    message.reactions ?? [],
   );
 
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -47,7 +46,7 @@ export function MessageReactionsBar({
   const mobileSheetRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    setLocalReactions((((message.reactions as any) ?? []) as Reaction[]) ?? []);
+    setLocalReactions(message.reactions ?? []);
   }, [message.reactions]);
 
   const grouped = useMemo(() => {
@@ -276,7 +275,7 @@ export function MessageReactionsBar({
           >
             <div className="max-h-[420px] overflow-auto">
               <EmojiPicker
-                onEmojiClick={(emojiData: any) => {
+                onEmojiClick={(emojiData: { emoji: string }) => {
                   toggleReaction(emojiData.emoji);
                   setPickerOpen(false);
                 }}
@@ -311,7 +310,7 @@ export function MessageReactionsBar({
             </div>
             <div className="p-2 max-h-[70vh] overflow-auto">
               <EmojiPicker
-                onEmojiClick={(emojiData: any) => {
+                onEmojiClick={(emojiData: { emoji: string }) => {
                   toggleReaction(emojiData.emoji);
                   setPickerOpen(false);
                 }}

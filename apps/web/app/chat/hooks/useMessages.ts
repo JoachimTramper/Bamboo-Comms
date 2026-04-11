@@ -21,6 +21,7 @@ type UseMessagesOptions = {
   resolveDisplayName?: ResolveDisplayName;
   onIncomingMessage?: (msg: Message) => void;
   lastReadSnapshot?: string | null;
+  conversationId?: string | null;
 };
 
 export function useMessages(
@@ -30,6 +31,7 @@ export function useMessages(
 ) {
   const [msgs, setMsgs] = useState<Message[]>([]);
   const listRef = useRef<HTMLDivElement | null>(null);
+  const conversationId = opts?.conversationId ?? null;
 
   const ready = !!(active && userId);
   const [loadingOlder, setLoadingOlder] = useState(false);
@@ -58,7 +60,8 @@ export function useMessages(
 
   useEffect(() => {
     setLastReadMessageIdByOthers(null);
-  }, [active]);
+    setHasMore(true);
+  }, [active, conversationId]);
 
   // Initial load
   useEffect(() => {
@@ -71,7 +74,9 @@ export function useMessages(
           lastReadSnapshotRef.current = opts?.lastReadSnapshot ?? null;
         }
 
-        const raw = await listMessages(active);
+        const raw = await listMessages(active, {
+          conversationId: conversationId ?? undefined,
+        });
         const normalized = raw.reverse().map(normalizeMessage);
 
         setMsgs(normalized);
@@ -89,7 +94,7 @@ export function useMessages(
         console.error("Failed to load messages:", err);
       }
     })();
-  }, [ready, active, opts?.lastReadSnapshot]);
+  }, [ready, active, conversationId, opts?.lastReadSnapshot]);
 
   // Join/leave channel
   useEffect(() => {
@@ -105,14 +110,36 @@ export function useMessages(
       s.off("connect", join);
       try {
         s.emit("channel.leave", { channelId: active });
-      } catch {}
+      } catch {
+        // Socket can already be closed during channel switches.
+      }
     };
   }, [ready, active]);
+
+  useEffect(() => {
+    if (!ready || !conversationId) return;
+
+    const s = getSocket();
+    const join = () => s.emit("conversation.join", { conversationId });
+
+    join();
+    s.on("connect", join);
+
+    return () => {
+      s.off("connect", join);
+      try {
+        s.emit("conversation.leave", { conversationId });
+      } catch {
+        // Socket can already be closed during conversation switches.
+      }
+    };
+  }, [ready, conversationId]);
 
   // Socket events
   useMessageSocketEvents({
     ready,
     active,
+    conversationId,
     userIdRef,
     resolveNameRef,
     onIncomingRef,
@@ -142,7 +169,11 @@ export function useMessages(
       const firstId = msgs[0]?.id;
       if (!firstId) return;
 
-      const older = await listMessages(active, { cursor: firstId, take: 50 });
+      const older = await listMessages(active, {
+        cursor: firstId,
+        take: 50,
+        conversationId: conversationId ?? undefined,
+      });
       const batch = older.reverse().map(normalizeMessage);
       if (batch.length === 0) setHasMore(false);
 
@@ -196,6 +227,7 @@ export function useMessages(
       const sent = await sendMessage(
         active,
         text,
+        conversationId ?? undefined,
         replyToMessageId,
         mentionUserIds,
         attachments,
@@ -235,6 +267,7 @@ export function useMessages(
       const failedMessage: Message = {
         id: failedId,
         channelId: active,
+        conversationId,
         content: text ?? "(no content)",
         authorId: userIdRef.current,
         createdAt: new Date().toISOString(),
@@ -282,12 +315,14 @@ export function useMessages(
     await send(
       failed.content ?? undefined,
       failed.parent?.id,
-      failed.mentions?.map((mm: any) => mm.userId) ?? [],
-      (failed.attachments ?? []).map((a: any) => ({
-        url: a.url,
-        fileName: a.fileName,
-        mimeType: a.mimeType,
-        size: a.size,
+      failed.mentions?.flatMap((mention) =>
+        mention.userId ? [mention.userId] : [],
+      ) ?? [],
+      (failed.attachments ?? []).map((attachment) => ({
+        url: attachment.url,
+        fileName: attachment.fileName,
+        mimeType: attachment.mimeType,
+        size: attachment.size,
       })),
     );
   };

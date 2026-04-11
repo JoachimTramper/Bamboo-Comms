@@ -8,6 +8,7 @@ import { MessagesRealtime } from './messages.realtime';
 type MinimalMessage = {
   id: string;
   channelId: string;
+  conversationId?: string | null;
   authorId: string;
   content: string | null;
   createdAt: Date;
@@ -29,7 +30,11 @@ export class MessagesBotOrchestrator {
     isCommand: boolean;
     botMentioned: boolean;
     lastReadOverride?: string | null;
-    createBotMessage: (channelId: string, content: string) => Promise<any>;
+    createBotMessage: (
+      channelId: string,
+      content: string,
+      conversationId?: string | null,
+    ) => Promise<any>;
   }): Promise<void> {
     const { msg, botId, isGeneral, isCommand, botMentioned } = params;
 
@@ -40,6 +45,7 @@ export class MessagesBotOrchestrator {
     // fire-and-forget style; caller can `void this.bot.maybeRespond(...)`
     this.rt.emitTyping({
       channelId: msg.channelId,
+      conversationId: msg.conversationId ?? null,
       userId: botId,
       displayName: 'BambooBob',
       isTyping: true,
@@ -166,7 +172,11 @@ export class MessagesBotOrchestrator {
       }
 
       // post bot reply as message
-      await params.createBotMessage(msg.channelId, botReply.reply);
+      await params.createBotMessage(
+        msg.channelId,
+        botReply.reply,
+        msg.conversationId ?? null,
+      );
     } catch (err) {
       // keep behavior: warn but don't crash message create path
       // eslint-disable-next-line no-console
@@ -174,6 +184,7 @@ export class MessagesBotOrchestrator {
     } finally {
       this.rt.emitTyping({
         channelId: msg.channelId,
+        conversationId: msg.conversationId ?? null,
         userId: botId,
         displayName: 'BambooBob',
         isTyping: false,

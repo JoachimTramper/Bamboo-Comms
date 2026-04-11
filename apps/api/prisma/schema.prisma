@@ -12,6 +12,28 @@ enum Role {
   ADMIN
 }
 
+enum ConversationStatus {
+  OPEN
+  PENDING
+  RESOLVED
+  CLOSED
+}
+
+enum ConversationPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum MessageContextType {
+  CHAT
+  CUSTOMER
+  AGENT
+  INTERNAL_NOTE
+  ASSISTANT
+}
+
 model User {
   id              String        @id @default(cuid())
   email           String        @unique
@@ -32,8 +54,35 @@ model User {
   deletedMessages Message[]     @relation("MessageDeletedBy")
   reactions       MessageReaction[]
   mentions        MessageMention[]
+  assignedConversations  Conversation[] @relation("ConversationAssignee")
+  escalatedConversations Conversation[] @relation("ConversationEscalatedBy")
+  internalNotes          InternalNote[]
 }
 
+model Customer {
+  id            String         @id @default(cuid())
+  email         String?        @unique
+  name          String?
+  company       String?
+  planTier      String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  conversations Conversation[]
+}
+
+model KnowledgeDocument {
+  id          String   @id @default(cuid())
+  title       String
+  content     String
+  tags        String[] @default([])
+  sourceUrl   String?
+  isPublished Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([isPublished, updatedAt(sort: Desc)])
+}
 
 model Channel {
   id            String                @id @default(cuid())
@@ -67,6 +116,9 @@ model Message {
   content     String?
   authorId    String
   channelId   String
+  conversationId String?
+  messageType MessageContextType @default(CHAT)
+  responseTimeMs Int?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   deletedAt   DateTime?
@@ -74,6 +126,7 @@ model Message {
 
   author    User    @relation(fields: [authorId], references: [id])
   channel   Channel @relation(fields: [channelId], references: [id])
+  conversation Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
   deletedBy User?   @relation("MessageDeletedBy", fields: [deletedById], references: [id])
 
   reactions MessageReaction[]
@@ -88,6 +141,57 @@ model Message {
 
   @@index([channelId, createdAt(sort: Desc)])
   @@index([channelId, deletedAt])
+  @@index([conversationId, createdAt(sort: Desc)])
+}
+
+model Conversation {
+  id           String               @id @default(cuid())
+  subject      String?
+  status       ConversationStatus   @default(OPEN)
+  priority     ConversationPriority @default(NORMAL)
+  tags         String[]             @default([])
+  isEscalated  Boolean              @default(false)
+  escalationReason String?
+  escalationTarget String?
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
+  lastMessageAt DateTime?
+  lastCustomerMessageAt DateTime?
+  lastSupportReplyAt DateTime?
+  firstResponseAt DateTime?
+  resolvedAt   DateTime?
+  escalatedAt  DateTime?
+
+  customerId   String?
+  assigneeId   String?
+  escalatedById String?
+
+  customer     Customer?            @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  assignee     User?                @relation("ConversationAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  escalatedBy  User?                @relation("ConversationEscalatedBy", fields: [escalatedById], references: [id], onDelete: SetNull)
+  messages     Message[]
+  internalNotes InternalNote[]
+
+  @@index([status, createdAt(sort: Desc)])
+  @@index([assigneeId, status])
+  @@index([customerId])
+  @@index([priority, status])
+  @@index([isEscalated, status])
+}
+
+model InternalNote {
+  id             String       @id @default(cuid())
+  conversationId String
+  authorId       String
+  content        String
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  author         User         @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt(sort: Desc)])
+  @@index([authorId, createdAt(sort: Desc)])
 }
 
 model ChannelRead {

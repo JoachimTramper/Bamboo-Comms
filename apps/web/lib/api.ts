@@ -1,12 +1,20 @@
 // apps/web/lib/api.ts
 import axios from "axios";
 import { refreshSocketAuth } from "@/lib/socket";
-import type { Message } from "@/app/chat/types";
+import type {
+  ConversationPriority,
+  ConversationStatus,
+  InternalNote,
+  Message,
+  SupportConversation,
+} from "@/app/chat/types";
 
 const api = axios.create({
   baseURL: process.env.NEXT_PUBLIC_API_BASE || "http://localhost:3000",
   withCredentials: true,
 });
+
+const CONVERSATION_REQUEST_TIMEOUT_MS = 10000;
 
 const TOKEN_KEY = "accessToken";
 let CURRENT_TOKEN: string | null = null; // per-tab in-memory cache
@@ -211,11 +219,12 @@ export async function createChannel(name: string) {
 
 export async function listMessages(
   channelId: string,
-  opts?: { take?: number; cursor?: string },
+  opts?: { take?: number; cursor?: string; conversationId?: string },
 ): Promise<Message[]> {
   const params = new URLSearchParams();
   if (opts?.take) params.set("take", String(opts.take));
   if (opts?.cursor) params.set("cursor", opts.cursor);
+  if (opts?.conversationId) params.set("conversationId", opts.conversationId);
 
   const qs = params.toString();
   const { data } = await api.get(
@@ -245,6 +254,7 @@ export async function searchMessages(
 export async function sendMessage(
   channelId: string,
   content?: string,
+  conversationId?: string,
   replyToMessageId?: string,
   mentionUserIds: string[] = [],
   attachments: Array<any> = [],
@@ -252,6 +262,7 @@ export async function sendMessage(
 ) {
   const { data } = await api.post(`/channels/${channelId}/messages`, {
     content,
+    conversationId,
     replyToMessageId,
     mentionUserIds,
     attachments,
@@ -361,4 +372,137 @@ export async function listChannelsWithUnread() {
     unread: number;
     lastRead: string | null;
   }>;
+}
+
+export async function listConversations(filters?: {
+  status?: ConversationStatus;
+  priority?: ConversationPriority;
+  assigneeId?: string;
+}) {
+  const { data } = await api.get("/conversations", {
+    params: {
+      status: filters?.status,
+      priority: filters?.priority,
+      assigneeId: filters?.assigneeId,
+    },
+  });
+  return data as SupportConversation[];
+}
+
+export async function getConversationById(conversationId: string) {
+  const { data } = await api.get(`/conversations/${conversationId}`, {
+    timeout: CONVERSATION_REQUEST_TIMEOUT_MS,
+  });
+  return data as SupportConversation;
+}
+
+export async function createCustomerSupportConversation(params: {
+  subject?: string;
+  message: string;
+}) {
+  const { data } = await api.post(
+    "/conversations/customer",
+    {
+      subject: params.subject?.trim() || undefined,
+      message: params.message.trim(),
+    },
+    {
+      timeout: CONVERSATION_REQUEST_TIMEOUT_MS,
+    },
+  );
+  return data as SupportConversation;
+}
+
+export async function assignConversation(
+  conversationId: string,
+  assigneeId?: string | null,
+) {
+  const { data } = await api.patch(
+    `/conversations/${conversationId}/assign`,
+    {
+      assigneeId: assigneeId ?? undefined,
+    },
+    {
+      timeout: CONVERSATION_REQUEST_TIMEOUT_MS,
+    },
+  );
+  return data as SupportConversation;
+}
+
+export async function updateConversation(
+  conversationId: string,
+  updates: {
+    status?: ConversationStatus;
+    priority?: ConversationPriority;
+    assigneeId?: string | null;
+    tags?: string[];
+    isEscalated?: boolean;
+    escalationReason?: string | null;
+  },
+) {
+  const { data } = await api.patch(`/conversations/${conversationId}`, updates, {
+    timeout: CONVERSATION_REQUEST_TIMEOUT_MS,
+  });
+  return data as SupportConversation;
+}
+
+export async function transitionConversation(
+  conversationId: string,
+  action: "OPEN" | "PENDING" | "RESOLVE" | "CLOSE" | "REOPEN",
+) {
+  const { data } = await api.patch(
+    `/conversations/${conversationId}/lifecycle`,
+    {
+      action,
+    },
+    {
+      timeout: CONVERSATION_REQUEST_TIMEOUT_MS,
+    },
+  );
+  return data as SupportConversation;
+}
+
+export async function generateConversationDraft(
+  conversationId: string,
+  instructions?: string,
+) {
+  const { data } = await api.post(
+    `/conversations/${conversationId}/assistant/draft`,
+    {
+      instructions: instructions?.trim() || undefined,
+    },
+  );
+
+  return data as {
+    conversationId: string;
+    draft: string;
+    generatedAt: string;
+    confidence?: "HIGH" | "MEDIUM" | "LOW";
+    confidenceHint?: string | null;
+  };
+}
+
+export async function listInternalNotes(conversationId: string) {
+  const { data } = await api.get(
+    `/conversations/${conversationId}/internal-notes`,
+  );
+  return data as InternalNote[];
+}
+
+export async function createInternalNote(
+  conversationId: string,
+  content: string,
+) {
+  const { data } = await api.post(
+    `/conversations/${conversationId}/internal-notes`,
+    { content },
+  );
+  return data as InternalNote;
+}
+
+export async function deleteInternalNote(
+  conversationId: string,
+  noteId: string,
+) {
+  await api.delete(`/conversations/${conversationId}/internal-notes/${noteId}`);
 }

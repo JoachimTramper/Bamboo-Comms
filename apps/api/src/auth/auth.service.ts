@@ -10,6 +10,8 @@ import * as bcrypt from 'bcrypt';
 import { randomBytes, createHash } from 'crypto';
 import { JwtService } from '@nestjs/jwt';
 import { MailService } from '../mail/mail.service';
+import { CustomersService } from '../customers/customers.service';
+import type { AuthJwtPayload } from './auth.types';
 
 const DISPLAYNAME_MAX = 32;
 
@@ -33,6 +35,7 @@ function isCustomAvatar(url?: string | null) {
 export class AuthService {
   constructor(
     private users: UsersService,
+    private customers: CustomersService,
     private jwt: JwtService,
     private mail: MailService,
   ) {}
@@ -194,9 +197,14 @@ export class AuthService {
 
   async refresh(refreshToken: string) {
     try {
-      const payload = await this.jwt.verifyAsync(refreshToken, {
+      const payload = await this.jwt.verifyAsync<AuthJwtPayload>(refreshToken, {
         secret: process.env.JWT_SECRET,
       });
+
+      const subjectType = payload.subjectType ?? 'user';
+      if (subjectType !== 'user') {
+        throw new UnauthorizedException('Invalid refresh token');
+      }
 
       const user = await this.users.findById(payload.sub);
       if (!user) throw new UnauthorizedException('Invalid refresh token');
@@ -212,15 +220,47 @@ export class AuthService {
   }
 
   private issueTokens(sub: string, email: string) {
+    const payload: AuthJwtPayload = {
+      sub,
+      email,
+      subjectType: 'user',
+    };
+
     const accessToken = this.jwt.sign(
-      { sub, email },
+      payload,
       { expiresIn: '15m', secret: process.env.JWT_SECRET },
     );
     const refreshToken = this.jwt.sign(
-      { sub, email },
+      payload,
       { expiresIn: '7d', secret: process.env.JWT_SECRET },
     );
     return { accessToken, refreshToken };
+  }
+
+  async ensureCustomerIdentity(input: {
+    email: string;
+    name?: string | null;
+    company?: string | null;
+    planTier?: string | null;
+  }) {
+    return this.customers.findOrCreateByEmail(input.email, {
+      name: input.name ?? null,
+      company: input.company ?? null,
+      planTier: input.planTier ?? null,
+    });
+  }
+
+  issueCustomerAccessToken(customer: { id: string; email?: string | null }) {
+    const payload: AuthJwtPayload = {
+      sub: customer.id,
+      email: customer.email ?? null,
+      subjectType: 'customer',
+    };
+
+    return this.jwt.sign(payload, {
+      expiresIn: '15m',
+      secret: process.env.JWT_SECRET,
+    });
   }
 
   private async makeUniqueDisplayName(seed?: string) {

@@ -9,14 +9,26 @@ export function useMobileSidebar(
   const swipeStartX = useRef<number | null>(null);
   const swipeCurrentX = useRef<number | null>(null);
   const swipeSidebarWasOpen = useRef(false);
+  const previousBodyOverflow = useRef<string>("");
 
   // body scroll lock when sidebar open (mobile)
   useEffect(() => {
-    if (sidebarOpen) document.body.style.overflow = "hidden";
-    else document.body.style.overflow = "";
+    if (typeof window === "undefined") return;
+
+    const isMobileViewport = window.matchMedia("(max-width: 767px)").matches;
+    if (!isMobileViewport) {
+      return;
+    }
+
+    if (sidebarOpen) {
+      previousBodyOverflow.current = document.body.style.overflow;
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = previousBodyOverflow.current;
+    }
 
     return () => {
-      document.body.style.overflow = "";
+      document.body.style.overflow = previousBodyOverflow.current;
     };
   }, [sidebarOpen]);
 

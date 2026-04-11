@@ -1,0 +1,799 @@
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import {
+  ConversationPriority,
+  ConversationStatus,
+  Role,
+  type Prisma,
+} from '@prisma/client';
+import { PrismaService } from '../prisma/prisma.service';
+import { CreateCustomerConversationDto } from './dto/create-customer-conversation.dto';
+import { CreateConversationDto } from './dto/create-conversation.dto';
+import { UpdateConversationDto } from './dto/update-conversation.dto';
+import { ListConversationsDto } from './dto/list-conversations.dto';
+import { ConversationLifecycleAction } from './dto/transition-conversation.dto';
+import { ConversationsRealtime } from './conversations.realtime';
+import type { AuthPrincipal } from '../auth/auth.types';
+import { MessagesService } from '../messages/messages.service';
+import {
+  CONVERSATION_WITH_PREVIEW_INCLUDE,
+  serializeConversationWithPreview,
+  type ConversationWithPreview,
+} from './conversation-serialization';
+
+const ALLOWED_FORWARD_STATUS_TRANSITIONS: Record<
+  ConversationStatus,
+  ConversationStatus[]
+> = {
+  [ConversationStatus.OPEN]: [
+    ConversationStatus.OPEN,
+    ConversationStatus.PENDING,
+    ConversationStatus.CLOSED,
+  ],
+  [ConversationStatus.PENDING]: [
+    ConversationStatus.PENDING,
+    ConversationStatus.RESOLVED,
+    ConversationStatus.CLOSED,
+  ],
+  [ConversationStatus.RESOLVED]: [
+    ConversationStatus.RESOLVED,
+    ConversationStatus.CLOSED,
+  ],
+  [ConversationStatus.CLOSED]: [ConversationStatus.CLOSED],
+};
+
+const DEFAULT_ESCALATION_TARGET = 'SUPERVISOR_REVIEW';
+const SUPPORT_CHANNEL_NAME_PREFIX = '__support__:';
+
+@Injectable()
+export class ConversationsService {
+  constructor(
+    private prisma: PrismaService,
+    private realtime: ConversationsRealtime,
+    private messages: MessagesService,
+  ) {}
+
+  private serializeConversation(conversation: ConversationWithPreview) {
+    return serializeConversationWithPreview(conversation);
+  }
+
+  private assertCreateConversationInput(dto?: CreateConversationDto) {
+    if (!dto) {
+      throw new BadRequestException('Conversation payload is required');
+    }
+
+    const hasMeaningfulInput =
+      dto.subject !== undefined ||
+      dto.status !== undefined ||
+      dto.priority !== undefined ||
+      dto.customerId !== undefined ||
+      dto.assigneeId !== undefined ||
+      dto.tags !== undefined;
+
+    if (!hasMeaningfulInput) {
+      throw new BadRequestException(
+        'Conversation payload must include at least one field',
+      );
+    }
+  }
+
+  private assertStatusTransition(
+    currentStatus: ConversationStatus,
+    nextStatus: ConversationStatus,
+  ) {
+    const allowed = ALLOWED_FORWARD_STATUS_TRANSITIONS[currentStatus] ?? [
+      currentStatus,
+    ];
+
+    if (allowed.includes(nextStatus)) return;
+
+    throw new BadRequestException(
+      `Invalid status transition from ${currentStatus} to ${nextStatus}`,
+    );
+  }
+
+  private resolveLifecycleTargetStatus(
+    currentStatus: ConversationStatus,
+    action: ConversationLifecycleAction,
+  ) {
+    switch (action) {
+      case ConversationLifecycleAction.PENDING:
+        this.assertStatusTransition(currentStatus, ConversationStatus.PENDING);
+        return ConversationStatus.PENDING;
+      case ConversationLifecycleAction.RESOLVE:
+        this.assertStatusTransition(currentStatus, ConversationStatus.RESOLVED);
+        return ConversationStatus.RESOLVED;
+      case ConversationLifecycleAction.CLOSE:
+        this.assertStatusTransition(currentStatus, ConversationStatus.CLOSED);
+        return ConversationStatus.CLOSED;
+      case ConversationLifecycleAction.OPEN:
+      case ConversationLifecycleAction.REOPEN:
+        if (
+          currentStatus !== ConversationStatus.OPEN &&
+          currentStatus !== ConversationStatus.PENDING &&
+          currentStatus !== ConversationStatus.RESOLVED &&
+          currentStatus !== ConversationStatus.CLOSED
+        ) {
+          throw new BadRequestException(
+            `Cannot reopen conversation from ${currentStatus}`,
+          );
+        }
+        return ConversationStatus.OPEN;
+      default:
+        throw new BadRequestException(
+          'Unsupported conversation lifecycle action',
+        );
+    }
+  }
+
+  private async persistConversationStatusChange(params: {
+    id: string;
+    previousStatus: ConversationStatus;
+    nextStatus: ConversationStatus;
+  }) {
+    if (params.previousStatus === params.nextStatus) {
+      return this.getConversationById(params.id);
+    }
+
+    const conversation = await this.prisma.conversation.update({
+      where: { id: params.id },
+      data: {
+        status: params.nextStatus,
+        resolvedAt:
+          params.nextStatus === ConversationStatus.RESOLVED
+            ? new Date()
+            : params.nextStatus === ConversationStatus.CLOSED &&
+                params.previousStatus === ConversationStatus.RESOLVED
+              ? undefined
+              : null,
+      },
+      include: CONVERSATION_WITH_PREVIEW_INCLUDE,
+    });
+
+    const serialized = this.serializeConversation(conversation);
+    this.realtime.emitConversationStatusUpdated({
+      ...serialized,
+      previousStatus: params.previousStatus,
+    });
+
+    return serialized;
+  }
+
+  private async assertCustomerCanCreateOpenConversation(customerId: string) {
+    const existingOpenConversation = await this.prisma.conversation.findFirst({
+      where: {
+        customerId,
+        status: ConversationStatus.OPEN,
+      },
+      select: { id: true },
+    });
+
+    if (existingOpenConversation) {
+      throw new BadRequestException(
+        'You already have an open support conversation. Please use the existing thread before starting another.',
+      );
+    }
+  }
+
+  private async maybeApplyUrgentAssignmentHook(params: {
+    priority?: ConversationPriority;
+    assigneeId?: string | null;
+  }) {
+    if (
+      params.priority !== ConversationPriority.URGENT ||
+      params.assigneeId !== undefined
+    ) {
+      return undefined;
+    }
+
+    // Safe placeholder for future escalation routing. No automatic reassignment
+    // happens until an explicit agent-tier model exists.
+    return undefined;
+  }
+
+  private resolveEscalationState(params: {
+    existing: {
+      isEscalated: boolean;
+      escalationReason?: string | null;
+      escalationTarget?: string | null;
+      escalatedAt?: Date | string | null;
+      escalatedById?: string | null;
+      priority: ConversationPriority;
+    };
+    priority?: ConversationPriority;
+    isEscalated?: boolean;
+    escalationReason?: string | null;
+    actorId?: string | null;
+  }) {
+    const nextPriority = params.priority ?? params.existing.priority;
+    const autoEscalated = nextPriority === ConversationPriority.URGENT;
+    const nextEscalationState = autoEscalated
+      ? true
+      : (params.isEscalated ?? params.existing.isEscalated);
+    const nextEscalationReason =
+      params.escalationReason === undefined
+        ? params.existing.escalationReason ?? null
+        : typeof params.escalationReason === 'string'
+          ? params.escalationReason.trim() || null
+          : null;
+
+    return {
+      nextEscalationState,
+      nextEscalationReason,
+      nextEscalationTarget: nextEscalationState
+        ? DEFAULT_ESCALATION_TARGET
+        : null,
+      nextEscalatedAt: nextEscalationState
+        ? params.existing.isEscalated
+          ? params.existing.escalatedAt ?? null
+          : new Date()
+        : null,
+      nextEscalatedById: nextEscalationState
+        ? params.existing.isEscalated
+          ? params.existing.escalatedById ?? null
+          : params.actorId ?? null
+        : null,
+      autoEscalated,
+    };
+  }
+
+  private async assertAgentActor(user?: AuthPrincipal) {
+    if (!user || user.subjectType !== 'user') {
+      throw new ForbiddenException('Escalation requires an agent actor');
+    }
+
+    const actor = await this.prisma.user.findUnique({
+      where: { id: user.sub },
+      select: { id: true, role: true },
+    });
+
+    if (!actor || actor.role !== Role.ADMIN) {
+      throw new ForbiddenException('Escalation requires an agent actor');
+    }
+
+    return actor;
+  }
+
+  private async resolveConversationAccessScope(actor?: AuthPrincipal) {
+    if (!actor) {
+      return {
+        isAdmin: true,
+        customerId: null,
+      };
+    }
+
+    if (actor.subjectType === 'customer') {
+      return {
+        isAdmin: false,
+        customerId: actor.sub,
+      };
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: actor.sub },
+      select: { email: true, role: true },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    if (user.role === Role.ADMIN) {
+      return {
+        isAdmin: true,
+        customerId: null,
+      };
+    }
+
+    const customer = await this.prisma.customer.findUnique({
+      where: { email: user.email },
+      select: { id: true },
+    });
+
+    return {
+      isAdmin: false,
+      customerId: customer?.id ?? null,
+    };
+  }
+
+  async listConversations(filters: ListConversationsDto, actor?: AuthPrincipal) {
+    const scope = await this.resolveConversationAccessScope(actor);
+    if (!scope.isAdmin && !scope.customerId) {
+      return [];
+    }
+
+    const where: Prisma.ConversationWhereInput = {};
+
+    if (!scope.isAdmin) {
+      where.customerId = scope.customerId;
+    }
+
+    if (filters.status) {
+      where.status = filters.status;
+    }
+
+    if (filters.priority) {
+      where.priority = filters.priority;
+    }
+
+    if (filters.assigneeId) {
+      where.assigneeId = filters.assigneeId;
+    }
+
+    if (filters.customerId) {
+      where.customerId = filters.customerId;
+    }
+
+    if (filters.tag) {
+      where.tags = { has: filters.tag.trim() };
+    }
+
+    const trimmedQuery = filters.query?.trim();
+    if (trimmedQuery) {
+      where.OR = [
+        { subject: { contains: trimmedQuery, mode: 'insensitive' } },
+        {
+          customer: {
+            is: {
+              email: { contains: trimmedQuery, mode: 'insensitive' },
+            },
+          },
+        },
+        {
+          customer: {
+            is: {
+              name: { contains: trimmedQuery, mode: 'insensitive' },
+            },
+          },
+        },
+        {
+          assignee: {
+            is: {
+              displayName: { contains: trimmedQuery, mode: 'insensitive' },
+            },
+          },
+        },
+      ];
+    }
+
+    const conversations = await this.prisma.conversation.findMany({
+      where,
+      take: filters.take ?? 50,
+      orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
+      include: CONVERSATION_WITH_PREVIEW_INCLUDE,
+    });
+
+    return conversations.map((conversation) =>
+      this.serializeConversation(conversation),
+    );
+  }
+
+  async getConversationById(id: string, actor?: AuthPrincipal) {
+    const scope = await this.resolveConversationAccessScope(actor);
+    const conversation = await this.prisma.conversation.findUnique({
+      where: { id },
+      include: CONVERSATION_WITH_PREVIEW_INCLUDE,
+    });
+
+    if (!conversation) {
+      throw new NotFoundException('Conversation not found');
+    }
+
+    if (!scope.isAdmin && conversation.customerId !== scope.customerId) {
+      throw new NotFoundException('Conversation not found');
+    }
+
+    return this.serializeConversation(conversation);
+  }
+
+  async createConversation(dto: CreateConversationDto) {
+    this.assertCreateConversationInput(dto);
+    await this.ensureReferences(dto.customerId, dto.assigneeId);
+    const urgentAssignment = await this.maybeApplyUrgentAssignmentHook({
+      priority: dto.priority,
+      assigneeId: dto.assigneeId,
+    });
+    const escalationState = this.resolveEscalationState({
+      existing: {
+        isEscalated: false,
+        escalationReason: null,
+        escalationTarget: null,
+        escalatedAt: null,
+        escalatedById: null,
+        priority: dto.priority ?? ConversationPriority.NORMAL,
+      },
+      priority: dto.priority,
+    });
+
+    const conversation = await this.prisma.conversation.create({
+      data: {
+        subject: dto.subject?.trim() || null,
+        status: dto.status ?? ConversationStatus.OPEN,
+        priority: dto.priority ?? ConversationPriority.NORMAL,
+        customerId: dto.customerId ?? null,
+        assigneeId: urgentAssignment ?? dto.assigneeId ?? null,
+        tags: this.normalizeTags(dto.tags),
+        isEscalated: escalationState.nextEscalationState,
+        escalationTarget: escalationState.nextEscalationTarget,
+        escalatedAt: escalationState.nextEscalatedAt,
+      },
+      include: CONVERSATION_WITH_PREVIEW_INCLUDE,
+    });
+
+    const serialized = this.serializeConversation(conversation);
+
+    this.realtime.emitConversationCreated(serialized);
+
+    if (serialized.isEscalated) {
+      console.log(
+        `[support-escalation] conversation=${serialized.id} target=${serialized.escalationTarget ?? DEFAULT_ESCALATION_TARGET} source=create`,
+      );
+      this.realtime.emitConversationEscalated(serialized);
+    }
+
+    return serialized;
+  }
+
+  async createCustomerConversation(
+    actor: AuthPrincipal,
+    dto: CreateCustomerConversationDto,
+  ) {
+    if (actor.subjectType !== 'user') {
+      throw new ForbiddenException(
+        'Customer conversation bootstrap currently requires a user actor',
+      );
+    }
+
+    const initialMessage = dto.message?.trim();
+    if (!initialMessage) {
+      throw new BadRequestException('Initial support message is required');
+    }
+
+    const customerId = await this.resolveCustomerIdForActor(actor);
+    await this.assertCustomerCanCreateOpenConversation(customerId);
+    const subject =
+      dto.subject?.trim() || `Support request from ${actor.email ?? 'customer'}`;
+
+    const conversation = await this.prisma.conversation.create({
+      data: {
+        subject,
+        status: ConversationStatus.OPEN,
+        priority: ConversationPriority.NORMAL,
+        customerId,
+        tags: [],
+        isEscalated: false,
+      },
+      include: CONVERSATION_WITH_PREVIEW_INCLUDE,
+    });
+
+    const supportChannelId = await this.createSupportChannelForConversation(
+      conversation.id,
+      actor.sub,
+      subject,
+    );
+
+    await this.messages.createCustomerConversationSeedMessage(
+      supportChannelId,
+      actor,
+      initialMessage,
+      conversation.id,
+    );
+
+    const hydratedConversation = await this.getConversationById(conversation.id);
+    this.realtime.emitConversationCreated(hydratedConversation);
+
+    return hydratedConversation;
+  }
+
+  async updateConversation(
+    id: string,
+    dto: UpdateConversationDto,
+    actor?: AuthPrincipal,
+  ) {
+    const existing = await this.getConversationById(id);
+    await this.ensureReferences(dto.customerId, dto.assigneeId);
+
+    const nextStatus = dto.status ?? existing.status;
+    if (dto.status !== undefined) {
+      this.assertStatusTransition(existing.status, nextStatus);
+    }
+
+    const urgentAssignment = await this.maybeApplyUrgentAssignmentHook({
+      priority: dto.priority ?? existing.priority,
+      assigneeId: dto.assigneeId,
+    });
+    const isEscalationUpdate =
+      dto.isEscalated !== undefined || dto.escalationReason !== undefined;
+    const escalationActor = isEscalationUpdate
+      ? await this.assertAgentActor(actor)
+      : null;
+    const escalationState = this.resolveEscalationState({
+      existing,
+      priority: dto.priority,
+      isEscalated: dto.isEscalated,
+      escalationReason: dto.escalationReason,
+      actorId: escalationActor?.id ?? null,
+    });
+
+    const conversation = await this.prisma.conversation.update({
+      where: { id },
+      data: {
+        subject:
+          dto.subject === undefined ? undefined : dto.subject.trim() || null,
+        status: dto.status,
+        priority: dto.priority,
+        customerId:
+          dto.customerId === undefined ? undefined : dto.customerId || null,
+        assigneeId:
+          dto.assigneeId === undefined
+            ? urgentAssignment === undefined
+              ? undefined
+              : urgentAssignment
+            : dto.assigneeId || null,
+        tags: dto.tags === undefined ? undefined : this.normalizeTags(dto.tags),
+        isEscalated:
+          isEscalationUpdate || dto.priority === ConversationPriority.URGENT
+            ? escalationState.nextEscalationState
+            : dto.isEscalated,
+        escalationReason:
+          isEscalationUpdate || dto.priority === ConversationPriority.URGENT
+            ? escalationState.nextEscalationState
+              ? escalationState.nextEscalationReason
+              : null
+            : undefined,
+        escalationTarget:
+          isEscalationUpdate || dto.priority === ConversationPriority.URGENT
+            ? escalationState.nextEscalationTarget
+            : undefined,
+        escalatedAt:
+          isEscalationUpdate || dto.priority === ConversationPriority.URGENT
+            ? escalationState.nextEscalatedAt
+            : undefined,
+        escalatedById:
+          isEscalationUpdate || dto.priority === ConversationPriority.URGENT
+            ? escalationState.nextEscalatedById
+            : undefined,
+        resolvedAt:
+          dto.status === undefined
+            ? undefined
+            : dto.status === ConversationStatus.RESOLVED
+              ? new Date()
+              : null,
+      },
+      include: CONVERSATION_WITH_PREVIEW_INCLUDE,
+    });
+
+    const serialized = this.serializeConversation(conversation);
+    let emittedRealtime = false;
+
+    if (dto.status !== undefined && dto.status !== existing.status) {
+      this.realtime.emitConversationStatusUpdated({
+        ...serialized,
+        previousStatus: existing.status,
+      });
+      emittedRealtime = true;
+    }
+
+    if (
+      dto.assigneeId !== undefined &&
+      (dto.assigneeId || null) !== (existing.assigneeId ?? null)
+    ) {
+      this.realtime.emitConversationAssigned(serialized);
+      emittedRealtime = true;
+    }
+
+    if (!existing.isEscalated && serialized.isEscalated) {
+      console.log(
+        `[support-escalation] conversation=${serialized.id} target=${serialized.escalationTarget ?? DEFAULT_ESCALATION_TARGET} source=${escalationState.autoEscalated ? 'priority-urgent' : 'manual'}`,
+      );
+      this.realtime.emitConversationEscalated(serialized);
+      emittedRealtime = true;
+    }
+
+    if (!emittedRealtime) {
+      this.realtime.emitConversationUpdated(serialized);
+    }
+
+    return serialized;
+  }
+
+  async updateConversationStatus(id: string, status: ConversationStatus) {
+    const existing = await this.getConversationById(id);
+    this.assertStatusTransition(existing.status, status);
+    return this.persistConversationStatusChange({
+      id,
+      previousStatus: existing.status,
+      nextStatus: status,
+    });
+  }
+
+  async assignConversation(id: string, assigneeId?: string) {
+    const existing = await this.getConversationById(id);
+    await this.ensureReferences(undefined, assigneeId);
+
+    if ((existing.assigneeId ?? null) === (assigneeId || null)) {
+      return existing;
+    }
+
+    const conversation = await this.prisma.conversation.update({
+      where: { id },
+      data: { assigneeId: assigneeId || null },
+      include: CONVERSATION_WITH_PREVIEW_INCLUDE,
+    });
+
+    const serialized = this.serializeConversation(conversation);
+
+    this.realtime.emitConversationAssigned(serialized);
+
+    return serialized;
+  }
+
+  async transitionConversation(
+    id: string,
+    action: ConversationLifecycleAction,
+  ) {
+    const existing = await this.getConversationById(id);
+    const targetStatus = this.resolveLifecycleTargetStatus(
+      existing.status,
+      action,
+    );
+
+    return this.persistConversationStatusChange({
+      id,
+      previousStatus: existing.status,
+      nextStatus: targetStatus,
+    });
+  }
+
+  async deleteConversation(id: string) {
+    await this.getConversationById(id);
+    await this.prisma.conversation.delete({ where: { id } });
+  }
+
+  // Temporary wrappers for in-flight callers during the migration.
+  list(filters: ListConversationsDto) {
+    return this.listConversations(filters);
+  }
+
+  getById(id: string) {
+    return this.getConversationById(id);
+  }
+
+  create(dto: CreateConversationDto) {
+    return this.createConversation(dto);
+  }
+
+  update(id: string, dto: UpdateConversationDto) {
+    return this.updateConversation(id, dto);
+  }
+
+  updateStatus(id: string, status: ConversationStatus) {
+    return this.updateConversationStatus(id, status);
+  }
+
+  assign(id: string, assigneeId?: string) {
+    return this.assignConversation(id, assigneeId);
+  }
+
+  remove(id: string) {
+    return this.deleteConversation(id);
+  }
+
+  private normalizeTags(tags?: string[]) {
+    if (!tags) return [];
+
+    return [...new Set(tags.map((tag) => tag.trim()).filter(Boolean))];
+  }
+
+  private async ensureReferences(customerId?: string, assigneeId?: string) {
+    if (customerId) {
+      const customer = await this.prisma.customer.findUnique({
+        where: { id: customerId },
+        select: { id: true },
+      });
+
+      if (!customer) {
+        throw new BadRequestException('Customer not found');
+      }
+    }
+
+    if (assigneeId) {
+      const assignee = await this.prisma.user.findUnique({
+        where: { id: assigneeId },
+        select: { id: true, role: true },
+      });
+
+      if (!assignee) {
+        throw new BadRequestException('Assignee not found');
+      }
+
+      if (assignee.role !== Role.ADMIN) {
+        throw new BadRequestException('Assignee must be an agent user');
+      }
+    }
+  }
+
+  private async resolveCustomerIdForActor(actor: AuthPrincipal) {
+    if (actor.subjectType === 'customer') {
+      if (actor.email) {
+        const customer = await this.prisma.customer.upsert({
+          where: { email: actor.email },
+          update: {},
+          create: { email: actor.email },
+          select: { id: true },
+        });
+
+        return customer.id;
+      }
+
+      const customer = await this.prisma.customer.create({
+        data: {},
+        select: { id: true },
+      });
+
+      return customer.id;
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: actor.sub },
+      select: { email: true, displayName: true },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    const customer = await this.prisma.customer.upsert({
+      where: { email: user.email },
+      update: {
+        name: user.displayName,
+      },
+      create: {
+        email: user.email,
+        name: user.displayName,
+      },
+      select: { id: true },
+    });
+
+    return customer.id;
+  }
+
+  private async createSupportChannelForConversation(
+    conversationId: string,
+    actorUserId: string,
+    subject: string,
+  ) {
+    const admins = await this.prisma.user.findMany({
+      where: { role: Role.ADMIN },
+      select: { id: true },
+    });
+
+    const memberIds = [...new Set([actorUserId, ...admins.map((user) => user.id)])];
+    const now = new Date();
+    const channel = await this.prisma.channel.create({
+      data: {
+        name: `${SUPPORT_CHANNEL_NAME_PREFIX}${conversationId}:${subject.slice(0, 48)}`,
+        isDirect: true,
+        members: {
+          connect: memberIds.map((id) => ({ id })),
+        },
+      },
+      select: { id: true },
+    });
+
+    await this.prisma.channelRead.createMany({
+      data: memberIds.map((userId) => ({
+        userId,
+        channelId: channel.id,
+        lastRead: now,
+      })),
+      skipDuplicates: true,
+    });
+
+    return channel.id;
+  }
+}

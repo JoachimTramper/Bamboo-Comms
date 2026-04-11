@@ -10,6 +10,7 @@ export type AiLang = 'nl' | 'en';
 export type AiChatMeta = {
   mode?: string;
   channelId?: string;
+  conversationId?: string;
   authorId?: string;
   userText?: string;
 };
@@ -69,7 +70,7 @@ export class AiChatClient {
     const lang = this.pickLang(meta?.userText);
 
     this.logger.log(
-      `groq.request mode=${meta?.mode ?? 'unknown'} channel=${meta?.channelId ?? '-'} msgs=${messages.length}`,
+      `groq.request mode=${meta?.mode ?? 'unknown'} channel=${meta?.channelId ?? '-'} conversation=${meta?.conversationId ?? '-'} msgs=${messages.length}`,
     );
 
     const controller = new AbortController();
@@ -130,7 +131,7 @@ export class AiChatClient {
           : 'Sorry, I did not receive a response.');
 
       this.logger.log(
-        `groq.success mode=${meta?.mode ?? 'unknown'} channel=${meta?.channelId ?? '-'} ms=${ms}`,
+        `groq.success mode=${meta?.mode ?? 'unknown'} channel=${meta?.channelId ?? '-'} conversation=${meta?.conversationId ?? '-'} ms=${ms}`,
       );
 
       return reply;
@@ -139,13 +140,13 @@ export class AiChatClient {
 
       if (e?.name === 'AbortError') {
         this.logger.warn(
-          `groq.timeout mode=${meta?.mode ?? 'unknown'} channel=${meta?.channelId ?? '-'} ms=${ms}`,
+          `groq.timeout mode=${meta?.mode ?? 'unknown'} channel=${meta?.channelId ?? '-'} conversation=${meta?.conversationId ?? '-'} ms=${ms}`,
         );
         return msg(lang, 'timeout');
       }
 
       this.logger.error(
-        `groq.fail mode=${meta?.mode ?? 'unknown'} channel=${meta?.channelId ?? '-'} ms=${ms} err=${String(e)}`,
+        `groq.fail mode=${meta?.mode ?? 'unknown'} channel=${meta?.channelId ?? '-'} conversation=${meta?.conversationId ?? '-'} ms=${ms} err=${String(e)}`,
       );
       return msg(lang, 'generic');
     } finally {

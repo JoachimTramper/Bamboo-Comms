@@ -8,6 +8,7 @@ import { AuthController } from './auth.controller';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { UsersService } from '../users/users.service';
 import { MailModule } from '../mail/mail.module';
+import { CustomersModule } from '../customers/customers.module';
 
 // Read env safely + type for expiresIn
 const JWT_SECRET = process.env.JWT_SECRET ?? 'dev-secret-change-me';
@@ -27,6 +28,7 @@ const EXPIRES_IN: number | StringValue | undefined = (() => {
       signOptions: { expiresIn: EXPIRES_IN },
     }),
     MailModule,
+    CustomersModule,
   ],
   controllers: [AuthController],
   providers: [AuthService, UsersService, JwtStrategy],

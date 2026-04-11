@@ -54,11 +54,7 @@ export function useDmPeer({
     return {
       id: member.id,
       displayName: member.displayName,
-      avatarUrl:
-        member.avatarUrl ??
-        (onlineEntry as any)?.avatarUrl ??
-        (recent as any)?.avatarUrl ??
-        null,
+      avatarUrl: member.avatarUrl ?? onlineEntry?.avatarUrl ?? recent?.avatarUrl ?? null,
       isOnline: status === "online" || status === "idle",
       isIdle: status === "idle",
       statusText,

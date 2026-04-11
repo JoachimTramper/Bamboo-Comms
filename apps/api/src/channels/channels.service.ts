@@ -8,6 +8,8 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { WsGateway } from '../ws/ws.gateway';
 
+const SUPPORT_CHANNEL_NAME_PREFIX = '__support__:';
+
 @Injectable()
 export class ChannelsService {
   constructor(
@@ -21,7 +23,10 @@ export class ChannelsService {
     if (!meId) throw new UnauthorizedException('Missing auth user');
 
     return this.prisma.channel.findMany({
-      where: { members: { some: { id: meId } } },
+      where: {
+        members: { some: { id: meId } },
+        NOT: { name: { startsWith: SUPPORT_CHANNEL_NAME_PREFIX } },
+      },
       orderBy: { createdAt: 'desc' },
     });
   }
@@ -137,7 +142,10 @@ export class ChannelsService {
     if (!meId) throw new UnauthorizedException('Missing auth user');
 
     const channels = await this.prisma.channel.findMany({
-      where: { members: { some: { id: meId } } },
+      where: {
+        members: { some: { id: meId } },
+        NOT: { name: { startsWith: SUPPORT_CHANNEL_NAME_PREFIX } },
+      },
       orderBy: { createdAt: 'desc' },
       include: {
         members: { select: { id: true, displayName: true } },
@@ -271,7 +279,11 @@ export class ChannelsService {
     if (!meId) throw new UnauthorizedException('Missing auth user');
 
     return this.prisma.channel.findMany({
-      where: { isDirect: true, members: { some: { id: meId } } },
+      where: {
+        isDirect: true,
+        members: { some: { id: meId } },
+        NOT: { name: { startsWith: SUPPORT_CHANNEL_NAME_PREFIX } },
+      },
       include: { members: { select: { id: true, displayName: true } } },
       orderBy: { createdAt: 'desc' },
     });

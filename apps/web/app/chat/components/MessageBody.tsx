@@ -16,7 +16,6 @@ type Props = {
 
   // state flags
   isDeleted: boolean;
-  isEdited: boolean;
   isEditing: boolean;
 
   // edit flow
@@ -54,7 +53,6 @@ export function MessageBody({
   isDirect,
   isDmMine,
   isDeleted,
-  isEdited,
   isEditing,
   editText,
   setEditText,

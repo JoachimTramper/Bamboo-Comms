@@ -44,6 +44,7 @@ export type MessageAttachment = {
 export type Message = {
   id: string;
   channelId: string;
+  conversationId?: string | null;
   content: string | null;
   authorId: string;
   createdAt: string;
@@ -81,4 +82,82 @@ export type OnlineUser = {
 export type ChannelWithUnread = Channel & {
   unread?: number;
   lastRead?: string | null;
+};
+
+export type ConversationStatus = "OPEN" | "PENDING" | "RESOLVED" | "CLOSED";
+
+export type ConversationPriority = "LOW" | "NORMAL" | "HIGH" | "URGENT";
+
+export type InternalNote = {
+  id: string;
+  conversationId: string;
+  authorId: string;
+  content: string;
+  createdAt: string;
+  updatedAt: string;
+  author: {
+    id: string;
+    displayName: string;
+    avatarUrl: string | null;
+  };
+};
+
+export type ConversationLifecycleAction =
+  | "OPEN"
+  | "PENDING"
+  | "RESOLVE"
+  | "CLOSE"
+  | "REOPEN";
+
+export type SupportConversation = {
+  id: string;
+  subject: string | null;
+  status: ConversationStatus;
+  priority: ConversationPriority;
+  tags: string[];
+  isEscalated: boolean;
+  escalationReason?: string | null;
+  escalationTarget?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  lastMessageAt: string | null;
+  lastCustomerMessageAt: string | null;
+  lastSupportReplyAt: string | null;
+  firstResponseAt: string | null;
+  resolvedAt: string | null;
+  escalatedAt: string | null;
+  primaryChannelId: string | null;
+  messageCount: number;
+  unread?: number;
+  customerId?: string | null;
+  assigneeId?: string | null;
+  customer?: {
+    id: string;
+    email?: string | null;
+    name?: string | null;
+    company?: string | null;
+    planTier?: string | null;
+  } | null;
+  assignee?: {
+    id: string;
+    email: string;
+    displayName: string;
+    role: "USER" | "ADMIN";
+  } | null;
+  escalatedBy?: {
+    id: string;
+    email: string;
+    displayName: string;
+    role: "USER" | "ADMIN";
+  } | null;
+  latestMessagePreview?: {
+    id: string;
+    content: string | null;
+    createdAt: string;
+    channelId: string;
+    author: {
+      id: string;
+      displayName: string;
+    };
+  } | null;
 };

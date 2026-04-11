@@ -2,14 +2,20 @@
 import { useEffect, useRef, useState } from "react";
 import { getSocket } from "@/lib/socket";
 
-export function useTyping(active: string | null, myId?: string) {
+type TypingScope = {
+  channelId: string | null;
+  conversationId?: string | null;
+};
+
+export function useTyping(scope: TypingScope, myId?: string) {
   const [typing, setTyping] = useState<
     Record<string, { name: string; ts: number }>
   >({});
   const stopTypingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { channelId, conversationId } = scope;
 
   useEffect(() => {
-    if (!active || !myId) return;
+    if ((!channelId && !conversationId) || !myId) return;
     const s = (() => {
       try {
         return getSocket();
@@ -25,7 +31,7 @@ export function useTyping(active: string | null, myId?: string) {
       displayName: string;
       isTyping: boolean;
     }) => {
-      if (p.channelId !== active) return;
+      if (p.channelId !== channelId) return;
       if (p.userId === myId) return;
       setTyping((prev) => {
         const next = { ...prev };
@@ -36,7 +42,31 @@ export function useTyping(active: string | null, myId?: string) {
       });
     };
 
-    s.on("typing", onTyping);
+    const onConversationTyping = (p: {
+      conversationId: string;
+      userId: string;
+      displayName: string;
+      isTyping: boolean;
+    }) => {
+      if (p.conversationId !== conversationId) return;
+      if (p.userId === myId) return;
+      setTyping((prev) => {
+        const next = { ...prev };
+        if (p.isTyping)
+          next[p.userId] = { name: p.displayName, ts: Date.now() };
+        else delete next[p.userId];
+        return next;
+      });
+    };
+
+    if (channelId) {
+      s.on("typing", onTyping);
+    }
+
+    if (conversationId) {
+      s.on("conversation.typing", onConversationTyping);
+    }
+
     const interval = setInterval(() => {
       const now = Date.now();
       setTyping((prev) => {
@@ -48,12 +78,17 @@ export function useTyping(active: string | null, myId?: string) {
     }, 1000);
 
     return () => {
-      s.off("typing", onTyping);
+      if (channelId) {
+        s.off("typing", onTyping);
+      }
+      if (conversationId) {
+        s.off("conversation.typing", onConversationTyping);
+      }
       clearInterval(interval);
     };
-  }, [active, myId]);
+  }, [channelId, conversationId, myId]);
 
-  const emitTyping = (channelId: string) => {
+  const emitTyping = (next: TypingScope) => {
     const s = (() => {
       try {
         return getSocket();
@@ -62,12 +97,22 @@ export function useTyping(active: string | null, myId?: string) {
       }
     })();
     if (!s) return;
-    s.emit("typing", { channelId, isTyping: true });
+    s.emit("typing", {
+      channelId: next.channelId ?? undefined,
+      conversationId: next.conversationId ?? undefined,
+      isTyping: true,
+    });
     if (stopTypingTimer.current) clearTimeout(stopTypingTimer.current);
     stopTypingTimer.current = setTimeout(() => {
       try {
-        s.emit("typing", { channelId, isTyping: false });
-      } catch {}
+        s.emit("typing", {
+          channelId: next.channelId ?? undefined,
+          conversationId: next.conversationId ?? undefined,
+          isTyping: false,
+        });
+      } catch {
+        // Socket may disconnect between start/stop typing events.
+      }
     }, 1500);
   };
 

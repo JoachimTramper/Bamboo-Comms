@@ -4,10 +4,20 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { MessageContextType, type Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { MessagesRealtime } from './messages.realtime';
 import { MessagesBotOrchestrator } from './messages.bot';
 import { MESSAGE_INCLUDE_FULL } from './messages.queries';
+import { AiAssistantService } from '../ai-assistant/ai-assistant.service';
+import type { AuthPrincipal } from '../auth/auth.types';
+import { AI_BOT_NAME } from '../bot/ai-bot.constants';
+import { formatHistoryLine } from '../bot/ai-bot.format';
+import { ConversationsRealtime } from '../conversations/conversations.realtime';
+import {
+  CONVERSATION_WITH_PREVIEW_INCLUDE,
+  serializeConversationWithPreview,
+} from '../conversations/conversation-serialization';
 
 const MAX_MESSAGE_LEN = 5000;
 
@@ -17,6 +27,8 @@ export class MessagesService {
     private prisma: PrismaService,
     private rt: MessagesRealtime,
     private bot: MessagesBotOrchestrator,
+    private assistant: AiAssistantService,
+    private conversationsRealtime: ConversationsRealtime,
   ) {}
 
   // ---------------------------
@@ -71,6 +83,211 @@ export class MessagesService {
     return parent.id;
   }
 
+  private async resolveConversationId(
+    conversationId?: string,
+    replyToMessageId?: string,
+  ): Promise<string | undefined> {
+    if (!conversationId && !replyToMessageId) return undefined;
+
+    let parentConversationId: string | null | undefined;
+
+    if (replyToMessageId) {
+      const parent = await this.prisma.message.findUnique({
+        where: { id: replyToMessageId },
+        select: { conversationId: true },
+      });
+
+      parentConversationId = parent?.conversationId ?? null;
+    }
+
+    if (!conversationId) {
+      return undefined;
+    }
+
+    const conversation = await this.prisma.conversation.findUnique({
+      where: { id: conversationId },
+      select: { id: true },
+    });
+
+    if (!conversation) {
+      throw new ForbiddenException('Invalid conversation');
+    }
+
+    if (
+      replyToMessageId &&
+      parentConversationId &&
+      parentConversationId !== conversationId
+    ) {
+      throw new ForbiddenException('Reply parent belongs to another conversation');
+    }
+
+    return conversation.id;
+  }
+
+  private inferMessageType(params: {
+    explicitType?: MessageContextType;
+    conversationId?: string;
+    authorId: string;
+    botId?: string | null;
+    subjectType: AuthPrincipal['subjectType'];
+  }) {
+    const { explicitType, conversationId, authorId, botId, subjectType } =
+      params;
+
+    if (!conversationId) {
+      if (explicitType && explicitType !== MessageContextType.CHAT) {
+        throw new ForbiddenException(
+          'Support message types require a conversation context',
+        );
+      }
+      return MessageContextType.CHAT;
+    }
+
+    const inferred =
+      explicitType ??
+      (botId && authorId === botId
+        ? MessageContextType.ASSISTANT
+        : subjectType === 'customer'
+          ? MessageContextType.CUSTOMER
+          : MessageContextType.AGENT);
+
+    if (inferred === MessageContextType.CHAT) {
+      throw new ForbiddenException(
+        'Chat message type is not valid for conversation messages',
+      );
+    }
+
+    if (
+      inferred === MessageContextType.CUSTOMER &&
+      subjectType !== 'customer' &&
+      !(botId && authorId === botId)
+    ) {
+      throw new ForbiddenException('Customer messages require a customer actor');
+    }
+
+    if (
+      inferred === MessageContextType.AGENT &&
+      subjectType !== 'user' &&
+      !(botId && authorId === botId)
+    ) {
+      throw new ForbiddenException('Agent replies require an agent actor');
+    }
+
+    if (inferred === MessageContextType.INTERNAL_NOTE && subjectType !== 'user') {
+      throw new ForbiddenException('Internal notes require an agent actor');
+    }
+
+    if (inferred === MessageContextType.ASSISTANT && authorId !== botId) {
+      throw new ForbiddenException('Assistant messages require the bot user');
+    }
+
+    return inferred;
+  }
+
+  private async getConversationResponseTimeMs(
+    conversationId: string,
+    messageType: MessageContextType,
+    createdAt: Date,
+  ) {
+    if (
+      messageType !== MessageContextType.AGENT &&
+      messageType !== MessageContextType.ASSISTANT
+    ) {
+      return null;
+    }
+
+    const conversation = await this.prisma.conversation.findUnique({
+      where: { id: conversationId },
+      select: { lastCustomerMessageAt: true },
+    });
+
+    if (!conversation?.lastCustomerMessageAt) return null;
+
+    const diff =
+      createdAt.getTime() - conversation.lastCustomerMessageAt.getTime();
+
+    return diff >= 0 ? diff : null;
+  }
+
+  private async updateConversationActivity(params: {
+    conversationId?: string | null;
+    messageType: MessageContextType;
+    createdAt: Date;
+    memberUserIds?: string[];
+  }) {
+    if (!params.conversationId) return;
+
+    const existing = await this.prisma.conversation.findUnique({
+      where: { id: params.conversationId },
+      select: {
+        id: true,
+        firstResponseAt: true,
+        lastCustomerMessageAt: true,
+      },
+    });
+
+    if (!existing) return;
+
+    const update: Prisma.ConversationUpdateInput = {
+      lastMessageAt: params.createdAt,
+    };
+
+    if (params.messageType === MessageContextType.CUSTOMER) {
+      update.lastCustomerMessageAt = params.createdAt;
+    }
+
+    if (
+      params.messageType === MessageContextType.AGENT ||
+      params.messageType === MessageContextType.ASSISTANT
+    ) {
+      update.lastSupportReplyAt = params.createdAt;
+      if (!existing.firstResponseAt && existing.lastCustomerMessageAt) {
+        update.firstResponseAt = params.createdAt;
+      }
+    }
+
+    const conversation = await this.prisma.conversation.update({
+      where: { id: params.conversationId },
+      data: update,
+      include: CONVERSATION_WITH_PREVIEW_INCLUDE,
+    });
+
+    if (!conversation) return;
+
+    this.conversationsRealtime.emitConversationUpdated(
+      serializeConversationWithPreview(conversation),
+      params.memberUserIds ?? [],
+    );
+  }
+
+  private async buildConversationHistoryForAssistant(
+    conversationId: string,
+    excludeMessageId: string,
+  ) {
+    const context = await this.prisma.message.findMany({
+      where: {
+        conversationId,
+        deletedAt: null,
+        id: { not: excludeMessageId },
+        messageType: { not: MessageContextType.INTERNAL_NOTE },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+      select: {
+        createdAt: true,
+        content: true,
+        author: { select: { displayName: true } },
+        parent: { select: { author: { select: { displayName: true } } } },
+        mentions: { select: { user: { select: { displayName: true } } } },
+      },
+    });
+
+    return context
+      .reverse()
+      .map((message) => formatHistoryLine(message as any))
+      .join('\n');
+  }
+
   // helper to assert channel access
   private async assertCanAccessChannel(channelId: string, userId: string) {
     const ch = await this.prisma.channel.findUnique({
@@ -122,15 +339,40 @@ export class MessagesService {
     channelId: string,
     content: string,
     markReadForUserId?: string,
+    conversationId?: string | null,
   ) {
     const botId = await this.getBotUserId();
     if (!botId) return null;
 
+    const messageType = conversationId
+      ? MessageContextType.ASSISTANT
+      : MessageContextType.CHAT;
+    const responseTimeMs = conversationId
+      ? await this.getConversationResponseTimeMs(
+          conversationId,
+          messageType,
+          new Date(),
+        )
+      : null;
+
     const msg = await this.prisma.message.create({
-      data: { channelId, authorId: botId, content: content ?? '' },
+      data: {
+        channelId,
+        conversationId: conversationId ?? null,
+        messageType,
+        responseTimeMs,
+        authorId: botId,
+        content: content ?? '',
+      },
       include: {
         author: { select: { id: true, displayName: true, avatarUrl: true } },
       },
+    });
+
+    await this.updateConversationActivity({
+      conversationId: msg.conversationId ?? null,
+      messageType,
+      createdAt: msg.createdAt,
     });
 
     if (markReadForUserId) {
@@ -150,6 +392,9 @@ export class MessagesService {
     this.rt.emitMessageCreated({
       id: msg.id,
       channelId: msg.channelId,
+      conversationId: msg.conversationId ?? null,
+      messageType: msg.messageType,
+      responseTimeMs: msg.responseTimeMs ?? null,
       authorId: msg.authorId,
       content: msg.content ?? null,
       createdAt: msg.createdAt.toISOString(),
@@ -171,11 +416,20 @@ export class MessagesService {
   // Read
   // ---------------------------
 
-  async list(channelId: string, userId: string, take = 50, cursor?: string) {
+  async list(
+    channelId: string,
+    userId: string,
+    take = 50,
+    cursor?: string,
+    conversationId?: string,
+  ) {
     await this.assertCanAccessChannel(channelId, userId);
 
     return this.prisma.message.findMany({
-      where: { channelId },
+      where: {
+        channelId,
+        ...(conversationId ? { conversationId } : {}),
+      },
       orderBy: { createdAt: 'desc' },
       ...this.page(take, cursor),
       include: MESSAGE_INCLUDE_FULL,
@@ -209,8 +463,10 @@ export class MessagesService {
 
   async create(
     channelId: string,
-    authorId: string,
+    actor: AuthPrincipal,
     content?: string,
+    conversationId?: string,
+    messageType?: MessageContextType,
     replyToMessageId?: string,
     mentionUserIds: string[] = [],
     attachments: {
@@ -221,19 +477,94 @@ export class MessagesService {
     }[] = [],
     lastReadOverride?: string | null,
   ) {
-    await this.assertCanAccessChannel(channelId, authorId);
+    return this.createInternal(
+      channelId,
+      actor,
+      content,
+      conversationId,
+      messageType,
+      replyToMessageId,
+      mentionUserIds,
+      attachments,
+      lastReadOverride,
+      false,
+    );
+  }
+
+  async createCustomerConversationSeedMessage(
+    channelId: string,
+    actor: AuthPrincipal,
+    content: string,
+    conversationId: string,
+  ) {
+    return this.createInternal(
+      channelId,
+      {
+        ...actor,
+        subjectType: 'customer',
+      },
+      content,
+      conversationId,
+      MessageContextType.CUSTOMER,
+      undefined,
+      [],
+      [],
+      null,
+      true,
+    );
+  }
+
+  private async createInternal(
+    channelId: string,
+    actor: AuthPrincipal,
+    content?: string,
+    conversationId?: string,
+    messageType?: MessageContextType,
+    replyToMessageId?: string,
+    mentionUserIds: string[] = [],
+    attachments: {
+      url: string;
+      fileName: string;
+      mimeType: string;
+      size: number;
+    }[] = [],
+    lastReadOverride?: string | null,
+    suppressConversationAssistantReply = false,
+  ) {
+    await this.assertCanAccessChannel(channelId, actor.sub);
 
     const cleanContent = this.guardMessageLen(content);
     const parentId = await this.resolveParentId(channelId, replyToMessageId);
+    const resolvedConversationId = await this.resolveConversationId(
+      conversationId,
+      replyToMessageId,
+    );
     const cleanMentions = this.cleanIds(mentionUserIds);
 
     const botId = await this.getBotUserId();
     const isBotMentioned = !!(botId && cleanMentions.includes(botId));
+    const resolvedMessageType = this.inferMessageType({
+      explicitType: messageType,
+      conversationId: resolvedConversationId,
+      authorId: actor.sub,
+      botId,
+      subjectType: actor.subjectType,
+    });
+    const responseTimeMs = resolvedConversationId
+      ? await this.getConversationResponseTimeMs(
+          resolvedConversationId,
+          resolvedMessageType,
+          new Date(),
+        )
+      : null;
 
     const msg = await this.prisma.message.create({
       data: {
         channelId,
-        authorId,
+        conversationId: resolvedConversationId,
+        messageType: resolvedMessageType,
+        responseTimeMs,
+        authorId: actor.sub,
         content: cleanContent,
         parentId,
         mentions: { create: cleanMentions.map((userId) => ({ userId })) },
@@ -253,6 +584,9 @@ export class MessagesService {
     this.rt.emitMessageCreated({
       id: msg.id,
       channelId: msg.channelId,
+      conversationId: msg.conversationId ?? null,
+      messageType: msg.messageType,
+      responseTimeMs: msg.responseTimeMs ?? null,
       authorId: msg.authorId,
       content: msg.content ?? null,
       createdAt: msg.createdAt.toISOString(),
@@ -297,12 +631,19 @@ export class MessagesService {
       })),
     });
 
-    // unread delta for everyone except sender
     const ch = await this.prisma.channel.findUnique({
       where: { id: msg.channelId },
       select: { members: { select: { id: true } } },
     });
 
+    await this.updateConversationActivity({
+      conversationId: msg.conversationId ?? null,
+      messageType: resolvedMessageType,
+      createdAt: msg.createdAt,
+      memberUserIds: (ch?.members ?? []).map((member) => member.id),
+    });
+
+    // unread delta for everyone except sender
     for (const m of ch?.members ?? []) {
       if (m.id === msg.authorId) continue;
 
@@ -315,6 +656,21 @@ export class MessagesService {
       });
     }
 
+    if (
+      msg.conversationId &&
+      resolvedMessageType === MessageContextType.CUSTOMER &&
+      botId &&
+      !suppressConversationAssistantReply
+    ) {
+      void this.maybeRespondInConversation({
+        messageId: msg.id,
+        channelId: msg.channelId,
+        conversationId: msg.conversationId,
+        authorId: msg.authorId,
+        content: msg.content ?? '',
+      });
+    }
+
     const text = (msg.content ?? '').trim();
     const isCommand = text.startsWith('!');
 
@@ -324,6 +680,7 @@ export class MessagesService {
     });
 
     const isGeneral = chMeta?.name === 'general' && chMeta?.isDirect === false;
+    const rawBotMentioned = text.includes(`@${AI_BOT_NAME}`);
 
     const botMentionedInSavedMsg = !!(
       botId &&
@@ -333,11 +690,12 @@ export class MessagesService {
     );
 
     // bot reply (async)
-    if (botId) {
+    if (botId && resolvedMessageType === MessageContextType.CHAT) {
       void this.bot.maybeRespond({
         msg: {
           id: msg.id,
           channelId: msg.channelId,
+          conversationId: msg.conversationId ?? null,
           authorId: msg.authorId,
           content: msg.content ?? null,
           createdAt: msg.createdAt,
@@ -346,14 +704,56 @@ export class MessagesService {
         botId,
         isGeneral,
         isCommand,
-        botMentioned: botMentionedInSavedMsg || isBotMentioned,
+        botMentioned:
+          botMentionedInSavedMsg || isBotMentioned || rawBotMentioned,
         lastReadOverride,
-        createBotMessage: async (chId, c) =>
-          this.createBotMessage(chId, c, undefined),
+        createBotMessage: async (chId, c, convId) =>
+          this.createBotMessage(chId, c, undefined, convId),
       });
     }
 
     return msg;
+  }
+
+  private async maybeRespondInConversation(params: {
+    messageId: string;
+    channelId: string;
+    conversationId: string;
+    authorId: string;
+    content: string;
+  }) {
+    const botId = await this.getBotUserId();
+    if (!botId) return;
+
+    try {
+      const history = await this.buildConversationHistoryForAssistant(
+        params.conversationId,
+        params.messageId,
+      );
+
+      const reply = await this.assistant.generateReply({
+        scope: {
+          channelId: params.channelId,
+          conversationId: params.conversationId,
+        },
+        authorId: params.authorId,
+        content: params.content,
+        history,
+        lastRead: null,
+      });
+
+      if (!reply?.reply?.trim()) return;
+
+      await this.createBotMessage(
+        params.channelId,
+        reply.reply,
+        undefined,
+        params.conversationId,
+      );
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn('[assistant] failed to generate conversation reply', err);
+    }
   }
 
   // ---------------------------
@@ -411,12 +811,19 @@ export class MessagesService {
     const updated = await this.prisma.message.update({
       where: { id: messageId },
       data: { content: cleanContent },
-      select: { id: true, channelId: true, content: true, updatedAt: true },
+      select: {
+        id: true,
+        channelId: true,
+        conversationId: true,
+        content: true,
+        updatedAt: true,
+      },
     });
 
     this.rt.emitMessageUpdated({
       id: updated.id,
       channelId: updated.channelId,
+      conversationId: updated.conversationId ?? null,
       content: updated.content ?? null,
       updatedAt: updated.updatedAt.toISOString(),
     });
@@ -434,12 +841,13 @@ export class MessagesService {
     const deleted = await this.prisma.message.update({
       where: { id: messageId },
       data: { deletedAt: new Date(), deletedById: userId, content: null },
-      select: { id: true, channelId: true, deletedAt: true },
+      select: { id: true, channelId: true, conversationId: true, deletedAt: true },
     });
 
     this.rt.emitMessageDeleted({
       id: deleted.id,
       channelId,
+      conversationId: deleted.conversationId ?? null,
       deletedAt: deleted.deletedAt!.toISOString(),
       deletedById: userId,
     });
@@ -453,7 +861,7 @@ export class MessagesService {
 
     const msg = await this.prisma.message.findUnique({
       where: { id: messageId },
-      select: { id: true, channelId: true },
+      select: { id: true, channelId: true, conversationId: true },
     });
     if (!msg) throw new NotFoundException('Message not found');
 
@@ -470,6 +878,7 @@ export class MessagesService {
     this.rt.emitReactionAdded({
       messageId,
       channelId: msg.channelId,
+      conversationId: msg.conversationId ?? null,
       emoji: trimmed,
       userId,
     });
@@ -483,7 +892,7 @@ export class MessagesService {
 
     const msg = await this.prisma.message.findUnique({
       where: { id: messageId },
-      select: { id: true, channelId: true },
+      select: { id: true, channelId: true, conversationId: true },
     });
     if (!msg) throw new NotFoundException('Message not found');
 
@@ -502,6 +911,7 @@ export class MessagesService {
     this.rt.emitReactionRemoved({
       messageId,
       channelId: msg.channelId,
+      conversationId: msg.conversationId ?? null,
       emoji: trimmed,
       userId,
     });

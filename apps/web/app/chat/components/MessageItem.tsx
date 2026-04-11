@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type React from "react";
-import type { Message } from "../types";
+import type { Message, MessageMention } from "../types";
 import { Avatar } from "./Avatar";
 import { MessageBody } from "./MessageBody";
 
@@ -59,7 +59,10 @@ export function MessageItem({
 
   const isMentioned =
     !isMine &&
-    !!m.mentions?.some((mm: any) => mm.userId === meId || mm.user?.id === meId);
+    !!m.mentions?.some(
+      (mention: MessageMention) =>
+        mention.userId === meId || mention.user?.id === meId,
+    );
 
   const openMenu = () => {
     if (isDeleted) return;
@@ -213,7 +216,6 @@ export function MessageItem({
               isDirect={isDirect}
               isDmMine={isDmMine}
               isDeleted={isDeleted}
-              isEdited={isEdited}
               isEditing={isEditing}
               editText={editText}
               setEditText={setEditText}
@@ -271,7 +273,6 @@ export function MessageItem({
               isDirect={isDirect}
               isDmMine={false}
               isDeleted={isDeleted}
-              isEdited={isEdited}
               isEditing={isEditing}
               editText={editText}
               setEditText={setEditText}

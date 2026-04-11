@@ -12,6 +12,7 @@ type SetState<T> = (value: T | ((prev: T) => T)) => void;
 type Args = {
   ready: boolean;
   active: string | null;
+  conversationId?: string | null;
 
   userIdRef: RefLike<string | undefined>;
   resolveNameRef: RefLike<ResolveDisplayName | undefined>;
@@ -24,6 +25,7 @@ type Args = {
 export function useMessageSocketEvents({
   ready,
   active,
+  conversationId,
   userIdRef,
   resolveNameRef,
   onIncomingRef,
@@ -35,12 +37,26 @@ export function useMessageSocketEvents({
 
     const s = getSocket();
 
+    const matchesScope = (payload: any) => {
+      if (conversationId) {
+        const scopedConversationId =
+          payload?.conversationId ??
+          payload?.conversation?.id ??
+          payload?.conversation_id;
+
+        return scopedConversationId === conversationId;
+      }
+
+      const channelId =
+        payload?.channelId ?? payload?.channel?.id ?? payload?.channel_id;
+
+      return !!active && channelId === active;
+    };
+
     const onCreated = (p: any) => {
       const msg = normalizeMessage(p);
-      const channelId = msg.channelId;
 
-      // Only add to UI if this is the active channel
-      if (channelId && channelId === active) {
+      if (matchesScope(msg)) {
         setMsgs((prev) => {
           if (prev.some((m) => m.id === msg.id)) return prev;
           return [...prev, msg];
@@ -52,8 +68,7 @@ export function useMessageSocketEvents({
     };
 
     const onUpdated = (p: any) => {
-      const channelId = p?.channelId ?? p?.channel?.id ?? p?.channel_id;
-      if (!active || channelId !== active) return;
+      if (!matchesScope(p)) return;
 
       setMsgs((prev) =>
         prev.map((m) =>
@@ -69,8 +84,7 @@ export function useMessageSocketEvents({
     };
 
     const onDeleted = (p: any) => {
-      const channelId = p?.channelId ?? p?.channel?.id ?? p?.channel_id;
-      if (!active || channelId !== active) return;
+      if (!matchesScope(p)) return;
 
       const deletedById = p.deletedById ?? p?.deletedBy?.id;
 
@@ -109,8 +123,7 @@ export function useMessageSocketEvents({
     };
 
     const onReactionAdded = (p: any) => {
-      const channelId = p?.channelId ?? p?.channel?.id ?? p?.channel_id;
-      if (!active || channelId !== active) return;
+      if (!matchesScope(p)) return;
 
       setMsgs((prev) =>
         prev.map((m) => {
@@ -131,8 +144,7 @@ export function useMessageSocketEvents({
     };
 
     const onReactionRemoved = (p: any) => {
-      const channelId = p?.channelId ?? p?.channel?.id ?? p?.channel_id;
-      if (!active || channelId !== active) return;
+      if (!matchesScope(p)) return;
 
       setMsgs((prev) =>
         prev.map((m) => {
@@ -149,8 +161,8 @@ export function useMessageSocketEvents({
     };
 
     const onRead = (p: any) => {
-      const channelId = p?.channelId ?? p?.channel?.id ?? p?.channel_id;
-      if (!active || channelId !== active) return;
+      if (conversationId) return;
+      if (!matchesScope(p)) return;
 
       if (p.userId && p.userId === userIdRef.current) return;
 
@@ -166,6 +178,14 @@ export function useMessageSocketEvents({
     s.on("message.added", onReactionAdded);
     s.on("message.removed", onReactionRemoved);
 
+    if (conversationId) {
+      s.on("conversation.message.created", onCreated);
+      s.on("conversation.message.updated", onUpdated);
+      s.on("conversation.message.deleted", onDeleted);
+      s.on("conversation.message.added", onReactionAdded);
+      s.on("conversation.message.removed", onReactionRemoved);
+    }
+
     return () => {
       s.off("message.read", onRead);
       s.off("message.created", onCreated);
@@ -173,10 +193,19 @@ export function useMessageSocketEvents({
       s.off("message.deleted", onDeleted);
       s.off("message.added", onReactionAdded);
       s.off("message.removed", onReactionRemoved);
+
+      if (conversationId) {
+        s.off("conversation.message.created", onCreated);
+        s.off("conversation.message.updated", onUpdated);
+        s.off("conversation.message.deleted", onDeleted);
+        s.off("conversation.message.added", onReactionAdded);
+        s.off("conversation.message.removed", onReactionRemoved);
+      }
     };
   }, [
     ready,
     active,
+    conversationId,
     userIdRef,
     resolveNameRef,
     onIncomingRef,

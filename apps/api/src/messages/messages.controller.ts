@@ -18,6 +18,7 @@ import { CreateMessageDto } from './dto/create-message.dto';
 import { UpdateMessageDto } from './dto/update-message.dto';
 import { SearchMessagesDto } from './dto/search-messages.dto';
 import { Throttle } from '@nestjs/throttler';
+import type { AuthPrincipal } from '../auth/auth.types';
 
 @Throttle({ default: { limit: 120, ttl: 60 } })
 @Controller('channels/:id/messages')
@@ -31,11 +32,18 @@ export class MessagesController {
     @User() user: { sub: string },
     @Query('take') take?: string,
     @Query('cursor') cursor?: string,
+    @Query('conversationId') conversationId?: string,
   ) {
     const n = Number(take);
     const safeTake = Number.isFinite(n) ? n : 50;
 
-    return this.svc.list(channelId, user.sub, safeTake, cursor);
+    return this.svc.list(
+      channelId,
+      user.sub,
+      safeTake,
+      cursor,
+      conversationId,
+    );
   }
 
   @Get('search')
@@ -60,12 +68,14 @@ export class MessagesController {
   create(
     @Param('id') channelId: string,
     @Body() dto: CreateMessageDto,
-    @User() user: { sub: string; email: string },
+    @User() user: AuthPrincipal,
   ) {
     return this.svc.create(
       channelId,
-      user.sub,
+      user,
       dto.content,
+      dto.conversationId,
+      dto.messageType,
       dto.replyToMessageId,
       dto.mentionUserIds ?? [],
       dto.attachments ?? [],

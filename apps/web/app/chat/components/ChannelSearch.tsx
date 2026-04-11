@@ -117,7 +117,7 @@ export function ChannelSearch({
       {/* No results state */}
       {!loading && !error && hasSearched && !hasResults && (
         <div className="text-xs text-gray-500">
-          No results found for <span className="font-mono">"{query}"</span>.
+          No results found for <span className="font-mono">&quot;{query}&quot;</span>.
         </div>
       )}
 

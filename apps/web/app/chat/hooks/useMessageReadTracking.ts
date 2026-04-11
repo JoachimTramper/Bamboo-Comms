@@ -5,7 +5,7 @@ type Args = {
   active: string | null;
   listRef: React.RefObject<HTMLDivElement | null>;
   msgsLen: number; // alleen length nodig
-  markRead: (channelId: string) => Promise<any>;
+  markRead: (channelId: string) => Promise<unknown>;
   thresholdPx?: number; // default 64
 };
 
@@ -32,7 +32,9 @@ export function useMessageReadTracking({
       nearBottomRef.current = is;
 
       if (!was && is) {
-        markRead(active).catch(() => {});
+        markRead(active).catch(() => {
+          // Read updates can fail during reconnects; the next sync will retry.
+        });
       }
     };
 
@@ -53,7 +55,9 @@ export function useMessageReadTracking({
     if (!nearBottomRef.current) return;
 
     el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
-    markRead(active).catch(() => {});
+    markRead(active).catch(() => {
+      // Read updates can fail during reconnects; the next sync will retry.
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [msgsLen, ready, active]);
 
@@ -63,7 +67,9 @@ export function useMessageReadTracking({
 
     const markIfAtBottom = () => {
       if (!nearBottomRef.current) return;
-      markRead(active).catch(() => {});
+      markRead(active).catch(() => {
+        // Read updates can fail during reconnects; the next sync will retry.
+      });
     };
 
     const onVis = () => {
